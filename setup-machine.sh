@@ -5,6 +5,7 @@ IFS=$'\n\t'
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$REPO_ROOT/lib"
 TOOLS_DIR="$REPO_ROOT/tools"
+source $LIB_DIR/*.sh 
 
 DRY_RUN=false
 FORCE=false
@@ -19,18 +20,6 @@ DO_HWGA=false
 DO_CLOUDINIT=false
 DO_ALL_THE_PACKAGES=false
 DO_ALL=false
-
-source "$LIB_DIR/colors.sh"
-source "$LIB_DIR/platform.sh"
-source "$LIB_DIR/users.sh"
-source "$LIB_DIR/sshkeys.sh"
-source "$LIB_DIR/packages.sh"
-source "$LIB_DIR/docker.sh"
-source "$LIB_DIR/cloud-init.sh"
-source "$LIB_DIR/pseudohome.sh"
-source "$LIB_DIR/hwga.sh"
-source "$LIB_DIR/vscode.sh"
-source "$LIB_DIR/tailscale.sh"
 
 require_root() { if [[ $(id -u) -ne 0 ]]; then err "Must be run as root"; exit 1; fi }
 check_online() { info "Checking network connectivity..."; if ! ping -c1 -W2 1.1.1.1 >/dev/null 2>&1; then err "No network"; exit 1; fi; ok "Network OK"; }
