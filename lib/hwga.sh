@@ -5,8 +5,6 @@ setup_hwga_no2id(){
     local user="no2id-docker"
     local base_dir="/usr/local/src"
     local docker_group="docker"
-    local REPO_HWGA="no2id/herewegoagain"
-    local REPO_FAKELE="adamamyl/fake-le"
 
     # Ensure base dir exists with proper group permissions
     mkdir -p "$base_dir"
@@ -25,52 +23,50 @@ setup_hwga_no2id(){
     chmod 700 "$sshdir"
     chown "$user:$user" "$sshdir"
 
-    # --- Deploy key for herewegoagain ---
-    local hwga_priv="$sshdir/id_ed25519_hwga"
-    local hwga_pub="$hwga_priv.pub"
-    if [[ ! -f "$hwga_pub" ]]; then
-        info "Generating deploy key for $REPO_HWGA"
-        sudo -u "$user" ssh-keygen -t ed25519 -f "$hwga_priv" -N "" -C "$user@$REPO_HWGA"
-    fi
-    chmod 600 "$hwga_priv" "$hwga_pub"
-    chown "$user:$user" "$hwga_priv" "$hwga_pub"
-
-    # --- Deploy key for fake-le ---
-    local fakele_priv="$sshdir/id_ed25519_fakele"
-    local fakele_pub="$fakele_priv.pub"
-    if [[ ! -f "$fakele_pub" ]]; then
-        info "Generating deploy key for $REPO_FAKELE"
-        sudo -u "$user" ssh-keygen -t ed25519 -f "$fakele_priv" -N "" -C "$user@$REPO_FAKELE"
-    fi
-    chmod 600 "$fakele_priv" "$fakele_pub"
-    chown "$user:$user" "$fakele_priv" "$fakele_pub"
-
-    # Ensure user in docker group
+    # Ensure user is in docker group
     groupadd -f docker
     usermod -aG docker "$user"
 
-    # --- Interactive deploy key confirmation ---
-    "$TOOLS_DIR/github-deploy-key.py" --repo "$REPO_HWGA" --user "$user" --key-path "$hwga_pub"
-    "$TOOLS_DIR/github-deploy-key.py" --repo "$REPO_FAKELE" --user "$user" --key-path "$fakele_pub"
+    # Define private repos and deploy keys
+    declare -A REPOS_KEYS=(
+        ["no2id/herewegoagain"]="id_ed25519_hwga"
+        ["adamamyl/fake-le"]="id_ed25519_fakele"
+    )
 
-    # --- Clone repos if missing ---
-    local hwga_dir="$base_dir/herewegoagain"
+    # Generate SSH keys for each repo
+    for repo in "${!REPOS_KEYS[@]}"; do
+        local keyname="${REPOS_KEYS[$repo]}"
+        local priv="$sshdir/$keyname"
+        local pub="$priv.pub"
+        if [[ ! -f "$pub" ]]; then
+            info "Generating SSH key for $repo"
+            sudo -u "$user" ssh-keygen -t ed25519 -f "$priv" -N "" -C "$user@$repo"
+        fi
+        chmod 600 "$priv" "$pub"
+        chown "$user:$user" "$priv" "$pub"
+
+        # Interactive GitHub deploy key confirmation
+        "$TOOLS_DIR/github-deploy-key.py" --repo "$repo" --user "$user" --key-path "$pub"
+    done
+
+    # Clone each repo using its dedicated deploy key
+    for repo in "${!REPOS_KEYS[@]}"; do
+        local keyname="${REPOS_KEYS[$repo]}"
+        local priv="$sshdir/$keyname"
+        local dest_dir="$base_dir/$(basename $repo)"
+
+        if [[ ! -d "$dest_dir" ]]; then
+            info "Cloning $repo"
+            sudo -u "$user" env GIT_SSH_COMMAND="ssh -i $priv -o IdentitiesOnly=yes" \
+                git clone "git@github.com:$repo.git" "$dest_dir"
+        else
+            ok "$dest_dir exists, skipping clone"
+        fi
+    done
+
+    # Run fake-le installer (assumes cloned path)
     local fakele_dir="$base_dir/fake-le"
-
-    if [[ ! -d "$hwga_dir" ]]; then
-        info "Cloning $REPO_HWGA"
-        sudo -u "$user" git clone "git@github.com:$REPO_HWGA.git" "$hwga_dir"
-    else
-        ok "$hwga_dir exists, skipping clone"
+    if [[ -d "$fakele_dir" ]]; then
+        "$fakele_dir/fake-le-for-no2id-docker-installer"
     fi
-
-    if [[ ! -d "$fakele_dir" ]]; then
-        info "Cloning $REPO_FAKELE"
-        sudo -u "$user" git clone "git@github.com:$REPO_FAKELE.git" "$fakele_dir"
-    else
-        ok "$fakele_dir exists, skipping clone"
-    fi
-
-    # Run fake-le installer
-    "$fakele_dir/fake-le-for-no2id-docker-installer"
 }
