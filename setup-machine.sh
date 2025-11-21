@@ -21,8 +21,21 @@ DO_CLOUDINIT=false
 DO_ALL_THE_PACKAGES=false
 DO_ALL=false
 
-require_root() { if [[ $(id -u) -ne 0 ]]; then err "Must be run as root"; exit 1; fi }
-check_online() { info "Checking network connectivity..."; if ! ping -c1 -W2 1.1.1.1 >/dev/null 2>&1; then err "No network"; exit 1; fi; ok "Network OK"; }
+require_root() { 
+  if [[ $(id -u) -ne 0 ]]; then 
+		err "Must be run as root"
+		exit 1
+	fi 
+}
+
+check_online() {
+  info "Checking network connectivity..."
+  if ! ping -c1 -W2 1.1.1.1 >/dev/null 2>&1; then
+    err "No network connectivity"
+    exit 1
+  fi
+  ok "Network OK"
+}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
