@@ -39,17 +39,47 @@ source "$LIB_DIR/python.sh"
 
 require_root() { if [[ $(id -u) -ne 0 ]]; then err "Must be run as root"; exit 1; fi }
 
+show_help() {
+cat <<EOF
+Usage: $0 [OPTIONS]
+
+Global options:
+    --help                 Show this help
+    --dry-run              Log actions without executing
+    --force                Overwrite files / skip prompts
+    --verbose              Enable verbose output
+    --quiet                Minimal output
+    --check-online         Verify network connectivity before running
+    --skip-network-check   Disable connectivity check (default)
+
+Module options:
+    --pseudohome           Setup 'adam' user and pseudohome repository
+    --tailscale            Install and configure Tailscale
+    --docker               Install Docker and add users to docker group
+    --hwga | --no2id       Setup no2id-docker user and deploy keys
+    --cloud-init           Install post-cloud-init scripts (Linux only)
+    --all-the-packages     Install standard packages
+    --all                  Run all tasks
+
+Notes:
+------
+- For deploying SSH keys to GitHub (e.g. no2id-docker), you need a Personal Access Token:
+  * Classic token: 'repo' scope (full control of private repos)
+  * Fine-grained token: select organization, repo access to the repository, "Read & Write" deploy keys
+  * Export token as: export GITHUB_TOKEN=ghp_xxxxxxxx
+  * GitHub token required if using private or org repositories
+  * URL: https://github.com/settings/tokens
+
+- Optional network check can be enabled with --check-online
+- Python 3 and virtualenv will be installed automatically if missing
+- Each module can be run individually or with --all
+EOF
+}
+
 # CLI parsing
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --help)
-            cat <<EOF
-Usage: $0 [OPTIONS]
-Global: --dry-run --force --verbose --quiet --check-online --skip-network-check
-Modules: --pseudohome --tailscale --docker --hwga --cloud-init --all-the-packages --all
-EOF
-            exit 0
-            ;;
+        --help) show_help; exit 0 ;;
         --dry-run) DRY_RUN=true ;;
         --force) FORCE=true ;;
         --verbose) VERBOSE=true ;;
@@ -63,18 +93,21 @@ EOF
         --cloud-init) DO_CLOUDINIT=true ;;
         --all-the-packages) DO_ALL_THE_PACKAGES=true ;;
         --all) DO_ALL=true ;;
-        *) err "Unknown arg $1"; exit 1 ;;
+        *) err "Unknown argument: $1"; exit 1 ;;
     esac
     shift
 done
 
 require_root
 
+# Optional network check
 [[ "$DO_CHECK_ONLINE" == true ]] && check_online
 
+# Install root SSH keys and Python venv
 install_root_ssh_keys
 ensure_python_and_venv
 
+# Run selected modules
 [[ "$DO_ALL" == true || "$DO_TAILSCALE" == true ]] && install_tailscale && ensure_tailscale_strict
 [[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] && setup_pseudohome
 [[ "$DO_ALL_THE_PACKAGES" == true ]] && install_packages
@@ -82,6 +115,7 @@ ensure_python_and_venv
 [[ "$DO_ALL" == true || "$DO_CLOUDINIT" == true ]] && install_cloud_init_repo
 [[ "$DO_ALL" == true || "$DO_HWGA" == true ]] && setup_hwga_no2id
 
+# Ubuntu desktop extras
 if [[ "$(uname -s)" == "Linux" && is_ubuntu_desktop ]]; then
     install_vscode
     install_gnome_tweaks
