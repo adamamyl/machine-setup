@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 import argparse, os, sys, time, subprocess
-try: import requests
-except Exception:
+try:
+    import requests
+except ImportError:
     print("Missing 'requests' module. Install via pip: pip install -r requirements.txt", file=sys.stderr)
     sys.exit(2)
 
 GITHUB_API = "https://api.github.com"
 
-def run(cmd): return subprocess.run(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def run(cmd):
+    """Run a command as a subprocess and return CompletedProcess."""
+    return subprocess.run(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 def ensure_key(user, key_path):
+    """Generate SSH key if it doesn't exist, return public key."""
     priv = key_path.replace('.pub','')
     if not os.path.exists(key_path):
         os.makedirs(os.path.dirname(key_path), exist_ok=True)
@@ -23,14 +27,16 @@ def ensure_key(user, key_path):
         pub = f.read().strip()
     return pub
 
-def check_deploy_key_present(repo,pubkey,token=None):
-    owner,name = repo.split('/')
+def check_deploy_key_present(repo, pubkey, token=None):
+    """Check if the deploy key exists on GitHub."""
+    owner, name = repo.split('/')
     url = f"{GITHUB_API}/repos/{owner}/{name}/keys"
     headers = {'Accept':'application/vnd.github.v3+json'}
     if token:
         headers['Authorization'] = f'token {token}'
     r = requests.get(url, headers=headers)
-    if r.status_code != 200: return False, r.status_code
+    if r.status_code != 200:
+        return False, r.status_code
     for k in r.json():
         if k.get('key') == pubkey:
             return True, 200
@@ -48,21 +54,21 @@ def main():
     pub = ensure_key(args.user, args.key_path)
     print('\n=== Public Key to add to GitHub deploy-keys ===')
     print(pub)
-    owner,name = args.repo.split('/')
+    owner, name = args.repo.split('/')
     print(f'Add the key to: https://github.com/{owner}/{name}/settings/keys')
 
-    start=time.time()
+    start = time.time()
     while True:
-        found,status=check_deploy_key_present(args.repo,pub,args.token)
+        found, status = check_deploy_key_present(args.repo, pub, args.token)
         if found:
             print('Key detected on GitHub. Proceeding...')
             sys.exit(0)
-        elapsed=time.time()-start
-        if elapsed>args.timeout:
+        elapsed = time.time() - start
+        if elapsed > args.timeout:
             print(f'Timeout ({args.timeout}s) waiting for key. Exiting.', file=sys.stderr)
             sys.exit(3)
         print('Key not found yet. Waiting 5s and retrying...')
         time.sleep(5)
 
-if __name__=='__main__':
+if __name__ == '__main__':
     main()

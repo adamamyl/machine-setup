@@ -1,3 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Module: vscode.sh
+
+install_vscode(){
+    info "Installing VSCode"
+    snap install --classic code
+}
