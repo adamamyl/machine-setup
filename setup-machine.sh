@@ -12,6 +12,7 @@ FORCE=false
 VERBOSE=false
 QUIET=false
 DO_CHECK_ONLINE=false
+DO_AUTOREMOVE=true
 
 # Module flags
 DO_PSEUDOHOME=false
@@ -51,6 +52,7 @@ Global options:
     --quiet                Minimal output
     --check-online         Verify network connectivity before running
     --skip-network-check   Disable connectivity check (default)
+    --no-autoremove        Skip 'apt autoremove' at the end
 
 Module options:
     --pseudohome           Setup 'adam' user and pseudohome repository
@@ -73,6 +75,7 @@ Notes:
 - Optional network check can be enabled with --check-online
 - Python 3 and virtualenv will be installed automatically if missing
 - Each module can be run individually or with --all
+- By default, runs 'apt autoremove' at the end; use --no-autoremove to skip
 EOF
 }
 
@@ -86,6 +89,7 @@ while [[ $# -gt 0 ]]; do
         --quiet) QUIET=true ;;
         --check-online) DO_CHECK_ONLINE=true ;;
         --skip-network-check) DO_CHECK_ONLINE=false ;;
+        --no-autoremove) DO_AUTOREMOVE=false ;;
         --pseudohome) DO_PSEUDOHOME=true ;;
         --tailscale) DO_TAILSCALE=true ;;
         --docker) DO_DOCKER=true ;;
@@ -119,6 +123,12 @@ ensure_python_and_venv
 if [[ "$(uname -s)" == "Linux" && is_ubuntu_desktop ]]; then
     install_vscode
     install_gnome_tweaks
+fi
+
+# Optional apt autoremove
+if [[ "$DO_AUTOREMOVE" == true ]]; then
+    info "Running apt autoremove..."
+    apt autoremove -y
 fi
 
 ok "All requested tasks completed."
