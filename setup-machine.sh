@@ -19,6 +19,7 @@ DO_HWGA=false
 DO_CLOUDINIT=false
 DO_ALL_THE_PACKAGES=false
 DO_ALL=false
+DO_CHECK_ONLINE=false
 
 # Source essential modules
 source "$LIB_DIR/colors.sh"
@@ -33,6 +34,7 @@ source "$LIB_DIR/hwga.sh"
 source "$LIB_DIR/vscode.sh"
 source "$LIB_DIR/tweaks.sh"
 source "$LIB_DIR/tailscale.sh"
+source "$LIB_DIR/python.sh"
 
 require_root() { if [[ $(id -u) -ne 0 ]]; then err "Must be run as root"; exit 1; fi }
 #check_online() { info "Checking network connectivity..."; if ! ping -c1 -W2 1.1.1.1 >/dev/null 2>&1; then err "No network"; exit 1; fi; ok "Network OK"; }
@@ -53,9 +55,11 @@ EOF
         --docker) DO_DOCKER=true ;;
         --hwga|--no2id) DO_HWGA=true ;;
         --cloud-init) DO_CLOUDINIT=true ;;
-        --check-online) DO_CHECKONLINE=true ;; 
         --all-the-packages) DO_ALL_THE_PACKAGES=true ;;
         --all) DO_ALL=true ;;
+        --skip-network-check) DO_CHECK_ONLINE=false ;;
+        --check-online) DO_CHECK_ONLINE=true ;;
+
         *) err "Unknown arg $1"; exit 1 ;;
     esac
     shift
@@ -71,18 +75,18 @@ if [[ "$DO_ALL" == true ]]; then
 fi
 
 require_root
+ensure_python_and_venv
+
+if [[ "$DO_CHECK_ONLINE" == true ]]; then
+    check_online
+fi
 
 if [[ "$DO_ALL" == true || "$DO_TAILSCALE" == true ]]; then
     install_tailscale
     ensure_tailscale_strict
 fi
 
-if [[ "$DO_CHECKONLINE" == true ]]; then
-    check_online
-fi
-
 install_root_ssh_keys
-ensure_python_and_venv
 
 if [[ "$DO_ALL" == true || "$DO_TAILSCALE" == true ]]; then
     install_tailscale
