@@ -13,6 +13,7 @@ VERBOSE=false
 QUIET=false
 DO_CHECK_ONLINE=false
 DO_AUTOREMOVE=true
+VENVDIR="/opt/setup-venv"
 
 # Module flags
 DO_PSEUDOHOME=false
@@ -26,21 +27,21 @@ DO_ALL=false
 
 # Source library scripts
 source "$LIB_DIR/colors.sh"
+source "$LIB_DIR/logging.sh"
 source "$LIB_DIR/platform.sh"
+source "$LIB_DIR/python.sh"
 source "$LIB_DIR/users.sh"
 source "$LIB_DIR/sshkeys.sh"
-source "$LIB_DIR/packages.sh"
+source "$LIB_DIR/repo-helper.sh"
 source "$LIB_DIR/docker.sh"
-source "$LIB_DIR/cloud-init.sh"
+source "$LIB_DIR/tailscale.sh"
 source "$LIB_DIR/pseudohome.sh"
 source "$LIB_DIR/hwga.sh"
+source "$LIB_DIR/system-repos.sh"
 source "$LIB_DIR/vscode.sh"
 source "$LIB_DIR/tweaks.sh"
-source "$LIB_DIR/tailscale.sh"
-source "$LIB_DIR/python.sh"
 source "$LIB_DIR/sudoers.sh"
 
-# Require root to run
 require_root() { if [[ $(id -u) -ne 0 ]]; then err "Must be run as root"; exit 1; fi }
 
 show_help() {
@@ -64,12 +65,12 @@ Module options:
     --docker               Install Docker and add users to docker group
     --hwga | --no2id       Setup no2id-docker user and deploy keys
     --cloud-init           Install post-cloud-init scripts (Linux only)
-    --all-the-packages     Install standard packages
+    --all-the-packages     Install standard packages & update-all-the-packages
     --all                  Run all tasks
 
 Notes:
 ------
-- For deploying SSH keys to GitHub (e.g., no2id-docker), you need a Personal Access Token:
+- For deploying SSH keys to GitHub (e.g., no2id-docker), you may need a Personal Access Token:
   * Classic token: 'repo' scope (full control of private repos)
   * Fine-grained token: select organization, repo access to the repository, "Read & Write" deploy keys
   * Export token as: export GITHUB_TOKEN=ghp_xxxxxxxx
@@ -77,7 +78,7 @@ Notes:
   * URL: https://github.com/settings/tokens
 
 - Optional network check can be enabled with --check-online
-- Python 3 and virtualenv will be installed automatically if missing
+- Python 3 and virtualenv will be installed automatically if missing (venv at $VENVDIR)
 - Each module can be run individually or with --all
 - By default, runs 'apt autoremove' at the end; use --no-autoremove to skip
 EOF
@@ -110,16 +111,13 @@ done
 require_root
 
 # Optional network check
-[[ "$DO_CHECK_ONLINE" == true ]] && check_online
+[[ "$DO_CHECK_ONLINE" == true ]] && check_online || true
 
 # Root SSH keys + Python/venv
 install_root_ssh_keys
 ensure_python_and_venv
 
-VENVDIR="/opt/setup-venv"
-
-
-# Run selected modules
+# Run selected modules (order matters)
 [[ "$DO_ALL" == true || "$DO_TAILSCALE" == true ]] && install_tailscale && ensure_tailscale_strict
 [[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] && setup_pseudohome
 [[ "$DO_ALL_THE_PACKAGES" == true ]] && install_packages

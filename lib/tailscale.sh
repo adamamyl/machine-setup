@@ -2,14 +2,17 @@
 set -euo pipefail
 
 install_tailscale() {
-  if command -v tailscale >/dev/null 2>&1; then
-    ok "Tailscale already installed, skipping"
-    return
-  fi
-  info "Installing Tailscale"
-  curl -fsSL https://tailscale.com/install.sh | sh
+	if ! command -v tailscale >/dev/null 2>&1; then
+		info "Installing Tailscale..."
+		curl -fsSL https://tailscale.com/install.sh | sh
+	else
+		ok "Tailscale already installed"
+	fi
 }
 
-ensure_tailscale_strict() {
-  tailscale set --ssh || warn "Failed to enable Tailscale SSH"
+nsure_tailscale_strict() {
+	info "Enabling Tailscale SSH (Linux only)"
+	if [[ "$(uname -s)" == "Linux" ]]; then
+		tailscale set --ssh || warn "Failed to enable Tailscale SSH"
+	fi
 }

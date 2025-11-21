@@ -1,33 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 setup_pseudohome() {
-  local user="adam"
-  local home_dir="/home/$user"
-  local repo_dir="$home_dir/pseudohome"
-  local symlink_script="$repo_dir/pseudohome-symlinks"
-  local marker_file="$home_dir/.pseudohome-symlinks-done"
+	local user="adam"
+	require_user "$user"
+	add_user_to_group "$user" staff
+	install_ssh_keys "$user" "https://github.com/adamamyl.keys"
 
-  require_user "$user"
-  install_ssh_keys "$user" "https://github.com/adamamyl.keys"
-
-  if [[ ! -d "$repo_dir" ]]; then
-    info "Cloning pseudohome repository"
-    sudo -u "$user" git clone --recursive git@github.com:adamamyl/pseudoadam.git "$repo_dir"
-  else
-    ok "$repo_dir already exists, skipping clone"
-  fi
-
-  if [[ ! -f "$marker_file" ]]; then
-    if [[ -f "$symlink_script" ]]; then
-      info "Applying pseudohome symlinks"
-      sudo -u "$user" bash "$symlink_script"
-      touch "$marker_file"
-      chown "$user:$user" "$marker_file"
-    else
-      warn "Symlink script $symlink_script not found, skipping"
-    fi
-  else
-    ok "Symlinks already applied, skipping"
-  fi
+	local repo_url="git@github.com:adamamyl/pseudoadam.git"
+	local base_dir
+	base_dir="$(eval echo "~$user")"
+	local dest_dir="$base_dir/pseudohome"
+	if [[ ! -d "$dest_dir" ]]; then
+		clone_or_update_repo "$repo_url" "$dest_dir"
+		if [[ -x "$dest_dir/pseudohome-symlinks" ]]; then
+			info "Running pseudohome symlinks"
+			"$dest_dir/pseudohome-symlinks"
+		else
+			warn "Symlink installer not executable"
+		fi
+	else
+		ok "Pseudohome already exists, skipping clone and symlinks"
+	fi
 }
