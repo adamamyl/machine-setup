@@ -10,7 +10,7 @@ setup_sudoers_staff() {
     return
   fi
 
-  info "Creating sudoers file for staff group at $file_path"
+  info "Creating sudoers file at $file_path"
   echo "$content" > "$file_path"
   chmod 440 "$file_path"
   chown root:root "$file_path"

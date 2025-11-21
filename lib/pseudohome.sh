@@ -8,27 +8,19 @@ setup_pseudohome() {
   local symlink_script="$repo_dir/pseudohome-symlinks"
   local marker_file="$home_dir/.pseudohome-symlinks-done"
 
-  # Ensure user exists
-  if ! id "$user" >/dev/null 2>&1; then
-    info "Creating user $user"
-    useradd -m -s /bin/bash "$user"
-  fi
-
-  # Install SSH keys
+  require_user "$user"
   install_ssh_keys "$user" "https://github.com/adamamyl.keys"
 
-  # Clone pseudohome repo if missing
   if [[ ! -d "$repo_dir" ]]; then
-    info "Cloning pseudohome repo"
+    info "Cloning pseudohome repository"
     sudo -u "$user" git clone --recursive git@github.com:adamamyl/pseudoadam.git "$repo_dir"
   else
     ok "$repo_dir already exists, skipping clone"
   fi
 
-  # Run symlinks script only once
   if [[ ! -f "$marker_file" ]]; then
     if [[ -f "$symlink_script" ]]; then
-      info "Applying symlinks for $user"
+      info "Applying pseudohome symlinks"
       sudo -u "$user" bash "$symlink_script"
       touch "$marker_file"
       chown "$user:$user" "$marker_file"

@@ -116,6 +116,9 @@ require_root
 install_root_ssh_keys
 ensure_python_and_venv
 
+VENVDIR="/opt/setup-venv"
+
+
 # Run selected modules
 [[ "$DO_ALL" == true || "$DO_TAILSCALE" == true ]] && install_tailscale && ensure_tailscale_strict
 [[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] && setup_pseudohome
