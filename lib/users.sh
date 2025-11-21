@@ -2,18 +2,11 @@
 set -euo pipefail
 
 create_user() {
-    local user="$1"
-    if ! id "$user" >/dev/null 2>&1; then
-        info "Creating user $user"
-        useradd -m -s /bin/bash "$user"
-    fi
-}
+    local u="$1"
+    id "$u" >/dev/null 2>&1 || useradd -m -s /bin/bash "$u"
+    }
 
 add_user_to_group() {
-    local user="$1"
-    local group="$2"
-    if ! id -nG "$user" | grep -qw "$group"; then
-        info "Adding $user to $group"
-        usermod -aG "$group" "$user"
-    fi
-}
+    local u="$1" g="$2"
+    id -nG "$u" | grep -qw "$g" || usermod -aG "$g" "$u"
+    }
