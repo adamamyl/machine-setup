@@ -124,7 +124,7 @@ VENVDIR="/opt/setup-venv"
 [[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] && setup_pseudohome
 [[ "$DO_ALL_THE_PACKAGES" == true ]] && install_packages
 [[ "$DO_ALL" == true || "$DO_DOCKER" == true ]] && install_docker_and_add_users
-[[ "$DO_ALL" == true || "$DO_CLOUDINIT" == true ]] && install_cloud_init_repo
+[[ "$DO_ALL" == true || "$DO_CLOUDINIT" == true ]] && install_linux_repos
 [[ "$DO_ALL" == true || "$DO_HWGA" == true ]] && setup_hwga_no2id
 [[ "$DO_ALL" == true || "$DO_SUDOERS" == true ]] && setup_sudoers_staff "/etc/sudoers.d/staff"
 
