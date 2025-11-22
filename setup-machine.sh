@@ -55,6 +55,10 @@ source "$LIB_DIR/sudoers.sh"
 source "$LIB_DIR/installers/github-deploy-key.sh"
 source "$LIB_DIR/sshkeys.sh"
 
+# export functions/helpers so subshells/sudo can use them:
+export -f setup_pseudohome
+export -f setup_hwga_no2id
+
 require_root() { 
   if [[ $(id -u) -ne 0 ]]; then 
     err "Must be run as root"
@@ -190,7 +194,8 @@ run_module_as_user() {
     local func="$1"
     shift
 
-    sudo -H -u "$user" bash -c "
+    # -E -u ; preserves exported functions and env variables.
+    sudo -E -u "$user" bash -c "
         set -euo pipefail
         IFS=$'\n\t'
 
@@ -203,11 +208,6 @@ run_module_as_user() {
         export QUIET=\"$QUIET\"
         export VERBOSE=\"$VERBOSE\"
         export USER_FLAGS='${USER_FLAGS[*]}'
-
-        # Dynamically source all helper and installer scripts
-        for f in '\$LIB_DIR/helpers/'*.sh '\$LIB_DIR/helpers-extra/'*.sh '\$LIB_DIR/installers/'*.sh; do
-          [[ -f \"\$f\" ]] && source \"\$f\"
-        done
 
         $func \"\${USER_FLAGS[*]}\"
     "
