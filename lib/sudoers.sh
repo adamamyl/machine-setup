@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 setup_sudoers_staff() {
-	local file="${1:-/etc/sudoers.d/staff}"
-	if [[ -f "$file" && "$FORCE" != true ]]; then
-		ok "$file already exists, skipping"
-		return
-	fi
-	echo "%staff ALL=(ALL:ALL) NOPASSWD: ALL" >"$file"
-	chmod 440 "$file"
-	ok "Sudoers file $file installed"
+  local file="${1:-/etc/sudoers.d/staff}"
+  local content="%staff ALL=(ALL:ALL) NOPASSWD: ALL"
+
+  ensure_file_with_content "$file" "$content"
+  _cmd "chmod 440 $file"
+  log_ok "Permissions for $file set to 440"
 }

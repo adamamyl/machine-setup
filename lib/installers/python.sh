@@ -12,8 +12,7 @@ ensure_python_and_venv() {
   fi
   if ! command -v python3 >/dev/null 2>&1; then
     info "Installing Python 3 and pip"
-    apt update
-    apt install -y python3 python3-venv python3-pip
+    apt_install python3 python3-venv python3-pip
   else
     ok "Python3 already installed"
   fi
