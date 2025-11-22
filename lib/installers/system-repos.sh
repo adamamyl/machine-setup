@@ -29,11 +29,12 @@ install_linux_repos() {
     _cmd "chmod -R g+w $dest_dir"
     _cmd "chmod -s $dest_dir"
 
-    if [[ -x "$dest_dir/$installer" ]]; then
+    local install_path="$dest_dir/$installer"
+    if [[ -f "$install_path" && -x "$install_path" ]]; then
       info "Running $installer for $repo_name..." "$QUIET"
-      _cmd "$dest_dir/$installer"
+      _cmd "$install_path"
     else
-      warn "Installer $installer not executable, skipping" "$QUIET"
+      warn "Installer $install_path missing or not executable, skipping" "$QUIET"
     fi
   done
 }
