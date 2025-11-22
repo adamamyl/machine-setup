@@ -215,29 +215,24 @@ run_module_as_user() {
 # Sudoers
 [[ "$DO_ALL" == true || "$DO_SUDOERS" == true ]] && setup_sudoers_staff "/etc/sudoers.d/staff"
 
-# ----------------------------------------------------------------------
-# Run pseudohome as adam user (safe sudo + venv)
-# ----------------------------------------------------------------------
-if [[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]]; then
-  info "Running pseudohome setup for user 'adam'..."
-  sudo -H -u adam bash -c "
-    export VENVDIR='$VENVDIR'
-    export PATH=\"\$VENVDIR/bin:\$PATH\"
-    setup_pseudohome
-  "
-fi
 
-# ----------------------------------------------------------------------
-# Run HWGA / no2id as no2id-docker user (safe sudo + venv)
-# ----------------------------------------------------------------------
-if [[ "$DO_ALL" == true || "$DO_HWGA" == true ]]; then
-  info "Running HWGA / no2id setup..."
-  sudo -H -u no2id-docker bash -c "
+# Run pseudohome as adam user
+[[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] && \
+  sudo -u adam bash -c "
+    source '$LIB_DIR/installers/pseudohome.sh'
+    PH_FLAGS='${USER_FLAGS[*]}'
     export VENVDIR='$VENVDIR'
     export PATH=\"\$VENVDIR/bin:\$PATH\"
-    setup_hwga_no2id
-  "
-fi
+    setup_pseudohome"
+
+# Run HWGA / no2id as no2id-docker user
+[[ "$DO_ALL" == true || "$DO_HWGA" == true ]] && \
+  sudo -u no2id-docker bash -c "
+    source '$LIB_DIR/installers/hwga.sh'
+    HWGA_FLAGS='${USER_FLAGS[*]}'
+    export VENVDIR='$VENVDIR'
+    export PATH=\"\$VENVDIR/bin:\$PATH\"
+    setup_hwga_no2id"
 
 # ----------------------------------------------------------------------
 # Virtual machine setup
