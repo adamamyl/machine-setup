@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$LIB_DIR/apt-behaviour.sh"
+source "$LIB_DIR/helpers-extra/apt-behaviour.sh"
 
 install_docker_and_add_users() {
   if command -v docker >/dev/null 2>&1; then

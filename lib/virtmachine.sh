@@ -2,21 +2,31 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ----------------------------------------------------------------------
+# Determine repository root and library directory
+# ----------------------------------------------------------------------
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"  # one level up from lib/
 LIB_DIR="$REPO_ROOT/lib"
 
+# ----------------------------------------------------------------------
 # Source helpers
-source "$LIB_DIR/colors.sh"
-source "$LIB_DIR/logging.sh"
+# ----------------------------------------------------------------------
+source "$LIB_DIR/helpers/colors.sh"
+source "$LIB_DIR/helpers/logging.sh"
+source "$LIB_DIR/helpers-extra/apt-behaviour.sh"
 source "$LIB_DIR/platform.sh"
 
+# ----------------------------------------------------------------------
 # Default VM flags
+# ----------------------------------------------------------------------
 DRY_RUN=false
 QUIET=false
 VERBOSE=false
 VM_USER=""
 
+# ----------------------------------------------------------------------
 # Parse CLI flags
+# ----------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=true ;;
@@ -37,7 +47,9 @@ done
 # Default VM user if not specified
 VM_USER="${VM_USER:-adam}"
 
+# ----------------------------------------------------------------------
 # Helper wrapper for dry-run
+# ----------------------------------------------------------------------
 _cmd() {
   if [[ "$DRY_RUN" == true ]]; then
     info "[DRY-RUN] $*" "$QUIET"
@@ -46,6 +58,9 @@ _cmd() {
   fi
 }
 
+# ----------------------------------------------------------------------
+# Require root
+# ----------------------------------------------------------------------
 require_root() {
   if [[ $(id -u) -ne 0 ]]; then
     err "Must be run as root"
