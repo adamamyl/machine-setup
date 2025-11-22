@@ -27,26 +27,40 @@ DO_ALL=false
 VM_FLAG=false
 VM_USER=""
 
-# Source library scripts
-source "$LIB_DIR/colors.sh"
-source "$LIB_DIR/logging.sh"
-source "$LIB_DIR/platform.sh"
-source "$LIB_DIR/python.sh"
-source "$LIB_DIR/users.sh"
-source "$LIB_DIR/sshkeys.sh"
-source "$LIB_DIR/repo-helper.sh"
-source "$LIB_DIR/docker.sh"
-source "$LIB_DIR/tailscale.sh"
-source "$LIB_DIR/pseudohome.sh"
-source "$LIB_DIR/hwga.sh"
-source "$LIB_DIR/system-repos.sh"
-source "$LIB_DIR/vscode.sh"
-source "$LIB_DIR/tweaks.sh"
+# ----------------------------------------------------------------------
+# Source library scripts by category for consistency
+# ----------------------------------------------------------------------
+
+# Helpers first
+for f in "$LIB_DIR/helpers/"*.sh; do
+  [[ -f "$f" ]] && source "$f"
+done
+
+# Extra helpers
+for f in "$LIB_DIR/helpers-extra/"*.sh; do
+  [[ -f "$f" ]] && source "$f"
+done
+
+# Installers / modules
+for f in "$LIB_DIR/installers/"*.sh; do
+  [[ -f "$f" ]] && source "$f"
+done
+
+# Individual scripts in lib root
 source "$LIB_DIR/sudoers.sh"
 source "$LIB_DIR/virtmachine.sh"
+source "$LIB_DIR/github-deploy-key.sh"
 
-require_root() { if [[ $(id -u) -ne 0 ]]; then err "Must be run as root"; exit 1; fi }
+require_root() { 
+  if [[ $(id -u) -ne 0 ]]; then 
+    err "Must be run as root"
+    exit 1
+  fi
+  }
 
+# ----------------------------------------------------------------------
+# Show help
+# ----------------------------------------------------------------------
 show_help() {
 cat <<EOF
 Usage: $0 [OPTIONS]
@@ -95,7 +109,9 @@ Notes:
 EOF
 }
 
+# ----------------------------------------------------------------------
 # CLI argument parsing
+# ----------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --help) show_help; exit 0 ;;
@@ -126,33 +142,52 @@ done
 
 require_root
 
+# ----------------------------------------------------------------------
 # Optional network check
+# ----------------------------------------------------------------------
 [[ "$DO_CHECK_ONLINE" == true ]] && check_online || true
 
+# ----------------------------------------------------------------------
 # Root SSH keys + Python/venv
+# ----------------------------------------------------------------------
 install_root_ssh_keys
 ensure_python_and_venv
 
-# Propagate flags to VM setup
-VM_FLAGS=()
-$DRY_RUN && VM_FLAGS+=(--dry-run)
-$QUIET && VM_FLAGS+=(--quiet)
-$VERBOSE && VM_FLAGS+=(--verbose)
-[[ -n "$VM_USER" ]] && VM_FLAGS+=(--user "$VM_USER")
+# ----------------------------------------------------------------------
+# Build flags for user-invoked scripts
+# ----------------------------------------------------------------------
+build_user_flags() {
+  local flags=()
+  $DRY_RUN && flags+=(--dry-run)
+  $QUIET && flags+=(--quiet)
+  $VERBOSE && flags+=(--verbose)
+  [[ -n "$VM_USER" ]] && flags+=(--user "$VM_USER")
+  echo "${flags[@]}"
+}
+USER_FLAGS=($(build_user_flags))
+export DRY_RUN QUIET VERBOSE  # sub-scripts read these
 
+# ----------------------------------------------------------------------
 # Run selected modules (order matters)
+# ----------------------------------------------------------------------
 [[ "$DO_ALL" == true || "$DO_TAILSCALE" == true ]] && install_tailscale && ensure_tailscale_strict
-[[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] && setup_pseudohome
 [[ "$DO_ALL_THE_PACKAGES" == true ]] && install_packages
 [[ "$DO_ALL" == true || "$DO_DOCKER" == true ]] && install_docker_and_add_users
 [[ "$DO_ALL" == true || "$DO_CLOUDINIT" == true ]] && install_linux_repos
-[[ "$DO_ALL" == true || "$DO_HWGA" == true ]] && setup_hwga_no2id
 [[ "$DO_ALL" == true || "$DO_SUDOERS" == true ]] && setup_sudoers_staff "/etc/sudoers.d/staff"
+
+# Run pseudohome as adam user
+[[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] &&
+  sudo -u adam bash -c "PH_FLAGS='${USER_FLAGS[*]}'; setup_pseudohome"
+
+# Run HWGA / no2id as no2id-docker user
+[[ "$DO_ALL" == true || "$DO_HWGA" == true ]] &&
+  sudo -u no2id-docker bash -c "HWGA_FLAGS='${USER_FLAGS[*]}'; setup_hwga_no2id"
 
 # Virtual machine setup
 if [[ "$VM_FLAG" == true ]]; then
   info "Running virtual machine setup..." "$QUIET"
-  virtmachine.sh "${VM_FLAGS[@]}"
+  virtmachine.sh "${USER_FLAGS[@]}"
 fi
 
 # Ubuntu desktop extras
@@ -164,8 +199,7 @@ fi
 # Optional apt autoremove
 if [[ "$DO_AUTOREMOVE" == true ]]; then
   info "Running apt autoremove..."
-  apt autoremove -y
+  apt_autoremove
 fi
-
 
 ok "All requested tasks completed."

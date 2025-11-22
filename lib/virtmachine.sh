@@ -91,7 +91,7 @@ fi
 # ----------------------------------------------------------------------
 for pkg in spice-vdagent qemu-guest-agent bindfs; do
   if ! dpkg -s "$pkg" &>/dev/null; then
-    _cmd "apt update && apt install -y $pkg"
+    apt_install "$pkg"
   else
     info "$pkg already installed" "$QUIET"
   fi

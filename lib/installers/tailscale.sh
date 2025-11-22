@@ -10,7 +10,7 @@ install_tailscale() {
 	fi
 }
 
-nsure_tailscale_strict() {
+ensure_tailscale_strict() {
 	info "Enabling Tailscale SSH (Linux only)"
 	if [[ "$(uname -s)" == "Linux" ]]; then
 		tailscale set --ssh || warn "Failed to enable Tailscale SSH"
