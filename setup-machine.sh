@@ -157,37 +157,87 @@ ensure_python_and_venv
 export VENVDIR="/opt/setup-venv"
 export PATH="$VENVDIR/bin:$PATH"
 
+# ----------------------------------------------------------------------
+# Build flags array for user-invoked scripts
+# ----------------------------------------------------------------------
+build_user_flags() {
+    local flags=()
+    [[ "$DRY_RUN" == true ]] && flags+=("--dry-run")
+    [[ "$QUIET" == true ]] && flags+=("--quiet")
+    [[ "$VERBOSE" == true ]] && flags+=("--verbose")
+    [[ -n "$VM_USER" ]] && flags+=("--user" "$VM_USER")
+    printf '%s\n' "${flags[@]}"
+}
 
-# ----------------------------------------------------------------------
-# Build flags array
-# ----------------------------------------------------------------------
 USER_FLAGS=()
-[[ "$DRY_RUN" == true ]] && USER_FLAGS+=("--dry-run")
-[[ "$QUIET" == true ]] && USER_FLAGS+=("--quiet")
-[[ "$VERBOSE" == true ]] && USER_FLAGS+=("--verbose")
-export USER_FLAGS
+while IFS= read -r flag; do
+    USER_FLAGS+=("$flag")
+done < <(build_user_flags)
 
 # Export global flags for sub-scripts
-export DRY_RUN QUIET VERBOSE
+export DRY_RUN QUIET VERBOSE VM_USER
+export USER_FLAGS
+
+# ----------------------------------------------------------------------
+# Helper to run a module as a user safely in the venv
+# ----------------------------------------------------------------------
+run_module_as_user() {
+    local user="$1"
+    shift
+    local func="$1"
+    shift
+
+    sudo -H -u "$user" bash -c "
+        export PATH=\"$VENVDIR/bin:\$PATH\"
+        export DRY_RUN=\"$DRY_RUN\"
+        export QUIET=\"$QUIET\"
+        export VERBOSE=\"$VERBOSE\"
+        ${func} \"\${USER_FLAGS[*]}\"
+    "
+}
 
 # ----------------------------------------------------------------------
 # Run selected modules (order matters)
 # ----------------------------------------------------------------------
+
+# Tailscale
 [[ "$DO_ALL" == true || "$DO_TAILSCALE" == true ]] && install_tailscale && ensure_tailscale_strict
+
+# Packages
 [[ "$DO_ALL_THE_PACKAGES" == true ]] && install_packages
+
+# Docker
 [[ "$DO_ALL" == true || "$DO_DOCKER" == true ]] && install_docker_and_add_users
+
+# Linux system repos
 [[ "$DO_ALL" == true || "$DO_CLOUDINIT" == true ]] && install_linux_repos
+
+# Sudoers
 [[ "$DO_ALL" == true || "$DO_SUDOERS" == true ]] && setup_sudoers_staff "/etc/sudoers.d/staff"
 
-# Run pseudohome as adam user
-[[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] &&
-  sudo -u adam bash -c "PH_FLAGS='${USER_FLAGS[*]}'; setup_pseudohome"
+# ----------------------------------------------------------------------
+# Run pseudohome as adam user (safe sudo + venv)
+# ----------------------------------------------------------------------
+if [[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]]; then
+  info "Running pseudohome setup for user 'adam'..."
+  sudo -H -u adam bash -c "
+    export VENVDIR='$VENVDIR'
+    export PATH=\"\$VENVDIR/bin:\$PATH\"
+    setup_pseudohome
+  "
+fi
 
-# Run HWGA / no2id as no2id-docker user
-[[ "$DO_ALL" == true || "$DO_HWGA" == true ]] &&
-  sudo -u no2id-docker bash -c "HWGA_FLAGS='${USER_FLAGS[*]}'; setup_hwga_no2id"
-
-
+# ----------------------------------------------------------------------
+# Run HWGA / no2id as no2id-docker user (safe sudo + venv)
+# ----------------------------------------------------------------------
+if [[ "$DO_ALL" == true || "$DO_HWGA" == true ]]; then
+  info "Running HWGA / no2id setup..."
+  sudo -H -u no2id-docker bash -c "
+    export VENVDIR='$VENVDIR'
+    export PATH=\"\$VENVDIR/bin:\$PATH\"
+    setup_hwga_no2id
+  "
+fi
 
 # ----------------------------------------------------------------------
 # Virtual machine setup
