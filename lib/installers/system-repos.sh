@@ -2,6 +2,9 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# ----------------------------------------------------------------------
+# Install system-level GitHub repos
+# ----------------------------------------------------------------------
 install_linux_repos() {
   local base_dir="/usr/local/src"
   _cmd "mkdir -p $base_dir"
@@ -9,6 +12,7 @@ install_linux_repos() {
   _cmd "chmod g+w $base_dir"
   _cmd "chmod -s $base_dir"
 
+  # Repos and their installer scripts
   declare -A repos=(
     ["post-cloud-init"]="install"
     ["update-all-the-packages"]="install-unattended-upgrades"
@@ -23,16 +27,20 @@ install_linux_repos() {
     local repo_url="${urls[$repo_name]}"
     local dest_dir="$base_dir/$repo_name"
 
+    # Clone or update the repo
     clone_or_update_repo "$repo_url" "$dest_dir"
 
+    # Fix permissions
     _cmd "chown -R root:root $dest_dir"
     _cmd "chmod -R g+w $dest_dir"
     _cmd "chmod -s $dest_dir"
 
+    # Full path to installer
     local install_path="$dest_dir/$installer"
     if [[ -f "$install_path" && -x "$install_path" ]]; then
       info "Running $installer for $repo_name..." "$QUIET"
-      _cmd "$install_path"
+      # Run inside the repo directory, return to previous dir
+      _cmd "pushd '$dest_dir' >/dev/null && './$installer' && popd >/dev/null"
     else
       warn "Installer $install_path missing or not executable, skipping" "$QUIET"
     fi
