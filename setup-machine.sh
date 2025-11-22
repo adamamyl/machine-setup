@@ -150,11 +150,13 @@ require_root
 # ----------------------------------------------------------------------
 # Root SSH keys + Python/venv
 # ----------------------------------------------------------------------
+export REPO_ROOT  # Ensure Python installer knows repo root
 install_root_ssh_keys
 
 ensure_python_and_venv
 export VENVDIR="/opt/setup-venv"
 export PATH="$VENVDIR/bin:$PATH"
+
 
 # ----------------------------------------------------------------------
 # Build flags array
