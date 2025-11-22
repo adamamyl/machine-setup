@@ -49,6 +49,7 @@ done
 # Individual scripts in lib root
 source "$LIB_DIR/sudoers.sh"
 source "$LIB_DIR/installers/github-deploy-key.sh"
+source "$LIB_DIR/sshkeys.sh"
 
 require_root() { 
   if [[ $(id -u) -ne 0 ]]; then 
