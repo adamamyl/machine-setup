@@ -13,6 +13,30 @@ declare -A HWGA_REPOS=(
 NO2ID_REPO="git@github.com:no2id/herewegoagain.git"
 FAKE_LE_REPO="git@github.com:adamamyl/fake-le.git"
 
+# Source Python helper and GitHub deploy key helper
+source "$LIB_DIR/helpers/python.sh"
+source "$LIB_DIR/installers/github-deploy-key.sh"
+
+setup_repo() {
+  local repo_url="$1"
+  local dest_dir="$2"
+  local user="$3"
+  local installer="$4"
+  local key_file="$5"
+
+  # Clone/update repo with optional deploy key
+  clone_or_update_repo "$repo_url" "$dest_dir" "$key_file"
+
+  _cmd "chown -R $user:$user $dest_dir"
+  _cmd "chmod -R g+w $dest_dir"
+  _cmd "chmod -s $dest_dir"
+
+  if [[ -n "$installer" && -x "$dest_dir/$installer" ]]; then
+    info "Running installer $installer..."
+    _cmd "$dest_dir/$installer"
+  fi
+}
+
 setup_hwga_no2id() {
   info "Starting HWGA / no2id setup..." "$QUIET"
 
@@ -23,54 +47,35 @@ setup_hwga_no2id() {
   _cmd "chmod g+w $HWGA_DIR"
   _cmd "chmod -s $HWGA_DIR"
 
-  # Loop through repos
   for repo_name in "${!HWGA_REPOS[@]}"; do
     IFS=':' read -r user dest_dir installer <<< "${HWGA_REPOS[$repo_name]}"
-    local key_file="$HOME/.ssh/${repo_name}-key"
+    local ssh_dir
+    ssh_dir="$(eval echo "~$user")/.ssh"
+    local key_file="$ssh_dir/$repo_name"
 
     require_user "$user"
     add_user_to_group "$user" docker
 
-    # Ensure user's .ssh exists
-    local ssh_dir
-    ssh_dir="$(eval echo "~$user")/.ssh"
     _cmd "mkdir -p -m 700 $ssh_dir"
     _cmd "chown $user:$user $ssh_dir"
 
     # Generate deploy key if missing
-    if [[ ! -f "$ssh_dir/$repo_name" ]]; then
-      info "Generating SSH key for $repo_name..." "$QUIET"
-      _cmd "ssh-keygen -t ed25519 -f $ssh_dir/$repo_name -N '' -C '${user}@$(hostname)'"
+    if [[ ! -f "$key_file" ]]; then
+      info "Generating SSH key for $repo_name..."
+      _cmd "ssh-keygen -t ed25519 -f $key_file -N '' -C '${user}@$(hostname)'"
+      _cmd "chmod 600 $key_file"
+      _cmd "chown $user:$user $key_file"
     fi
-    _cmd "chmod 600 $ssh_dir/$repo_name"
-    _cmd "chown $user:$user $ssh_dir/$repo_name"
 
-    # Prompt user to add public key if first time
-    info "Add this public key to GitHub for repo $repo_name:" "$QUIET"
-    cat "$ssh_dir/$repo_name.pub"
-    read -p "Press Enter once added..."
-
-    # Clone or update repo using correct deploy key
+    # Determine repo URL
     local repo_url
-    if [[ "$repo_name" == "herewegoagain" ]]; then
-      repo_url="$NO2ID_REPO"
-    else
-      repo_url="$FAKE_LE_REPO"
-    fi
-    clone_or_update_repo "$repo_url" "$dest_dir" "$ssh_dir/$repo_name"
+    [[ "$repo_name" == "herewegoagain" ]] && repo_url="$NO2ID_REPO" || repo_url="$FAKE_LE_REPO"
 
-    # Ensure repo ownership and permissions
-    _cmd "chown -R $user:$user $dest_dir"
-    _cmd "chmod -R g+w $dest_dir"
-    _cmd "chmod -s $dest_dir"
+    # Deploy key workflow using Python inside venv
+    sudo -u "$user" run_github_deploy_key "$repo_url" "$key_file"
 
-    # Run installer if specified and executable
-    if [[ -n "$installer" && -x "$dest_dir/$installer" ]]; then
-      info "Running installer for $repo_name..." "$QUIET"
-      _cmd "$dest_dir/$installer"
-    elif [[ -n "$installer" ]]; then
-      warn "Installer $installer for $repo_name not executable, skipping" "$QUIET"
-    fi
+    # Clone or update repo and run installer
+    setup_repo "$repo_url" "$dest_dir" "$user" "$installer" "$key_file"
   done
 
   ok "HWGA / no2id setup complete" "$QUIET"

@@ -48,8 +48,7 @@ done
 
 # Individual scripts in lib root
 source "$LIB_DIR/sudoers.sh"
-source "$LIB_DIR/virtmachine.sh"
-source "$LIB_DIR/github-deploy-key.sh"
+source "$LIB_DIR/installers/github-deploy-key.sh"
 
 require_root() { 
   if [[ $(id -u) -ne 0 ]]; then 
@@ -151,21 +150,22 @@ require_root
 # Root SSH keys + Python/venv
 # ----------------------------------------------------------------------
 install_root_ssh_keys
+
 ensure_python_and_venv
+export VENVDIR="/opt/setup-venv"
+export PATH="$VENVDIR/bin:$PATH"
 
 # ----------------------------------------------------------------------
-# Build flags for user-invoked scripts
+# Build flags array
 # ----------------------------------------------------------------------
-build_user_flags() {
-  local flags=()
-  $DRY_RUN && flags+=(--dry-run)
-  $QUIET && flags+=(--quiet)
-  $VERBOSE && flags+=(--verbose)
-  [[ -n "$VM_USER" ]] && flags+=(--user "$VM_USER")
-  echo "${flags[@]}"
-}
-USER_FLAGS=($(build_user_flags))
-export DRY_RUN QUIET VERBOSE  # sub-scripts read these
+USER_FLAGS=()
+[[ "$DRY_RUN" == true ]] && USER_FLAGS+=("--dry-run")
+[[ "$QUIET" == true ]] && USER_FLAGS+=("--quiet")
+[[ "$VERBOSE" == true ]] && USER_FLAGS+=("--verbose")
+export USER_FLAGS
+
+# Export global flags for sub-scripts
+export DRY_RUN QUIET VERBOSE
 
 # ----------------------------------------------------------------------
 # Run selected modules (order matters)
@@ -184,10 +184,23 @@ export DRY_RUN QUIET VERBOSE  # sub-scripts read these
 [[ "$DO_ALL" == true || "$DO_HWGA" == true ]] &&
   sudo -u no2id-docker bash -c "HWGA_FLAGS='${USER_FLAGS[*]}'; setup_hwga_no2id"
 
+
+
+# ----------------------------------------------------------------------
+# Virtual machine setup
+# ----------------------------------------------------------------------
 # Virtual machine setup
 if [[ "$VM_FLAG" == true ]]; then
   info "Running virtual machine setup..." "$QUIET"
-  virtmachine.sh "${USER_FLAGS[@]}"
+  # Only forward flags that virtmachine.sh knows
+  VM_FLAGS=()
+  [[ "$DRY_RUN" == true ]] && VM_FLAGS+=("--dry-run")
+  [[ "$QUIET" == true ]] && VM_FLAGS+=("--quiet")
+  [[ "$VERBOSE" == true ]] && VM_FLAGS+=("--verbose")
+  [[ -n "$VM_USER" ]] && VM_FLAGS+=("--user" "$VM_USER")
+
+  # Call virtmachine.sh with filtered flags
+  "$LIB_DIR/virtmachine.sh" "${VM_FLAGS[@]}"
 fi
 
 # Ubuntu desktop extras
