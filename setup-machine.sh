@@ -24,6 +24,8 @@ DO_CLOUDINIT=false
 DO_ALL_THE_PACKAGES=false
 DO_SUDOERS=false
 DO_ALL=false
+VM_FLAG=false
+VM_USER=""
 
 # Source library scripts
 source "$LIB_DIR/colors.sh"
@@ -41,6 +43,7 @@ source "$LIB_DIR/system-repos.sh"
 source "$LIB_DIR/vscode.sh"
 source "$LIB_DIR/tweaks.sh"
 source "$LIB_DIR/sudoers.sh"
+source "$LIB_DIR/virtmachine.sh"
 
 require_root() { if [[ $(id -u) -ne 0 ]]; then err "Must be run as root"; exit 1; fi }
 
@@ -57,6 +60,8 @@ Global options:
     --check-online         Verify network connectivity before running
     --skip-network-check   Disable connectivity check (default)
     --no-autoremove        Skip 'apt autoremove' at the end
+    --vm | --virtmachine   Run UTM/QEMU virtual machine setup
+    --vm-user <username>   Specify local user for UTM mount (default: adam)
 
 Module options:
     --pseudohome           Setup 'adam' user and pseudohome repository
@@ -81,6 +86,12 @@ Notes:
 - Python 3 and virtualenv will be installed automatically if missing (venv at $VENVDIR)
 - Each module can be run individually or with --all
 - By default, runs 'apt autoremove' at the end; use --no-autoremove to skip
+
+- --vm | --virtmachine
+  - Run VM setup for user 'adam' interactively
+    - sudo ./setup-machine.sh --vm --vm-user adam --verbose
+  - Dry-run only
+    - sudo ./setup-machine.sh --vm --dry-run
 EOF
 }
 
@@ -103,6 +114,11 @@ while [[ $# -gt 0 ]]; do
     --cloud-init) DO_CLOUDINIT=true ;;
     --all-the-packages) DO_ALL_THE_PACKAGES=true ;;
     --all) DO_ALL=true ;;
+    --vm|--virtmachine) VM_FLAG=true ;;
+    --vm-user)
+      shift
+      VM_USER="$1"
+      ;;
     *) err "Unknown argument: $1"; exit 1 ;;
   esac
   shift
@@ -117,6 +133,13 @@ require_root
 install_root_ssh_keys
 ensure_python_and_venv
 
+# Propagate flags to VM setup
+VM_FLAGS=()
+$DRY_RUN && VM_FLAGS+=(--dry-run)
+$QUIET && VM_FLAGS+=(--quiet)
+$VERBOSE && VM_FLAGS+=(--verbose)
+[[ -n "$VM_USER" ]] && VM_FLAGS+=(--user "$VM_USER")
+
 # Run selected modules (order matters)
 [[ "$DO_ALL" == true || "$DO_TAILSCALE" == true ]] && install_tailscale && ensure_tailscale_strict
 [[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] && setup_pseudohome
@@ -125,6 +148,12 @@ ensure_python_and_venv
 [[ "$DO_ALL" == true || "$DO_CLOUDINIT" == true ]] && install_linux_repos
 [[ "$DO_ALL" == true || "$DO_HWGA" == true ]] && setup_hwga_no2id
 [[ "$DO_ALL" == true || "$DO_SUDOERS" == true ]] && setup_sudoers_staff "/etc/sudoers.d/staff"
+
+# Virtual machine setup
+if [[ "$VM_FLAG" == true ]]; then
+  info "Running virtual machine setup..." "$QUIET"
+  virtmachine.sh "${VM_FLAGS[@]}"
+fi
 
 # Ubuntu desktop extras
 if [[ "$(uname -s)" == "Linux" && is_ubuntu_desktop ]]; then
@@ -137,5 +166,6 @@ if [[ "$DO_AUTOREMOVE" == true ]]; then
   info "Running apt autoremove..."
   apt autoremove -y
 fi
+
 
 ok "All requested tasks completed."
