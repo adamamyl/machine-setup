@@ -6,6 +6,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$REPO_ROOT/lib"
 TOOLS_DIR="$REPO_ROOT/tools"
 
+# Export globals so sudo sub-shells can see them
+export REPO_ROOT LIB_DIR TOOLS_DIR
+
 # Global flags
 DRY_RUN=false
 FORCE=false
@@ -14,6 +17,7 @@ QUIET=false
 DO_CHECK_ONLINE=false
 DO_AUTOREMOVE=true
 VENVDIR="/opt/setup-venv"
+export VENVDIR
 
 # Module flags
 DO_PSEUDOHOME=false
@@ -62,30 +66,30 @@ require_root() {
 # Show help
 # ----------------------------------------------------------------------
 show_help() {
-  cat <<EOF
+cat <<EOF
 Usage: $0 [OPTIONS]
 
 Global options:
-  --help                 Show this help
-  --dry-run              Log actions without executing
-  --force                Overwrite files / skip prompts
-  --verbose              Enable verbose output
-  --quiet                Minimal output
-  --check-online         Verify network connectivity before running
-  --skip-network-check   Disable connectivity check (default)
-  --no-autoremove        Skip 'apt autoremove' at the end
-  --vm | --virtmachine   Run UTM/QEMU virtual machine setup
-  --vm-user <username>   Specify local user for UTM mount (default: adam)
+    --help                 Show this help
+    --dry-run              Log actions without executing
+    --force                Overwrite files / skip prompts
+    --verbose              Enable verbose output
+    --quiet                Minimal output
+    --check-online         Verify network connectivity before running
+    --skip-network-check   Disable connectivity check (default)
+    --no-autoremove        Skip 'apt autoremove' at the end
+    --vm | --virtmachine   Run UTM/QEMU virtual machine setup
+    --vm-user <username>   Specify local user for UTM mount (default: adam)
 
 Module options:
-  --pseudohome           Setup 'adam' user and pseudohome repository
-  --sudoers              Install /etc/sudoers.d/staff for NOPASSWD on staff
-  --tailscale            Install and configure Tailscale
-  --docker               Install Docker and add users to docker group
-  --hwga | --no2id       Setup no2id-docker user and deploy keys
-  --cloud-init           Install post-cloud-init scripts (Linux only)
-  --all-the-packages     Install standard packages & update-all-the-packages
-  --all                  Run all tasks
+    --pseudohome           Setup 'adam' user and pseudohome repository
+    --sudoers              Install /etc/sudoers.d/staff for NOPASSWD on staff
+    --tailscale            Install and configure Tailscale
+    --docker               Install Docker and add users to docker group
+    --hwga | --no2id       Setup no2id-docker user and deploy keys
+    --cloud-init           Install post-cloud-init scripts (Linux only)
+    --all-the-packages     Install standard packages & update-all-the-packages
+    --all                  Run all tasks
 
 Notes:
 ------
@@ -160,49 +164,53 @@ export PATH="$VENVDIR/bin:$PATH"
 # Build flags array for user-invoked scripts
 # ----------------------------------------------------------------------
 build_user_flags() {
-  local flags=()
-  [[ "$DRY_RUN" == true ]] && flags+=("--dry-run")
-  [[ "$QUIET" == true ]] && flags+=("--quiet")
-  [[ "$VERBOSE" == true ]] && flags+=("--verbose")
-  [[ -n "$VM_USER" ]] && flags+=("--user" "$VM_USER")
-  printf '%s\n' "${flags[@]}"
+    local flags=()
+    [[ "$DRY_RUN" == true ]] && flags+=("--dry-run")
+    [[ "$QUIET" == true ]] && flags+=("--quiet")
+    [[ "$VERBOSE" == true ]] && flags+=("--verbose")
+    [[ -n "$VM_USER" ]] && flags+=("--user" "$VM_USER")
+    printf '%s\n' "${flags[@]}"
 }
 
 USER_FLAGS=()
 while IFS= read -r flag; do
-  USER_FLAGS+=("$flag")
+    USER_FLAGS+=("$flag")
 done < <(build_user_flags)
 
+# Export global flags for sub-scripts
 export DRY_RUN QUIET VERBOSE VM_USER
 export USER_FLAGS
 
 # ----------------------------------------------------------------------
 # Helper to run a module as a user safely in the venv
-# Sources all helpers/installers dynamically
 # ----------------------------------------------------------------------
 run_module_as_user() {
-  local user="$1"
-  shift
-  local func="$1"
-  shift
+    local user="$1"
+    shift
+    local func="$1"
+    shift
 
-  sudo -H -u "$user" bash -c "
-    set -euo pipefail
-    IFS=$'\n\t'
+    sudo -H -u "$user" bash -c "
+        set -euo pipefail
+        IFS=$'\n\t'
 
-    export PATH=\"$VENVDIR/bin:\$PATH\"
-    export DRY_RUN=\"$DRY_RUN\"
-    export QUIET=\"$QUIET\"
-    export VERBOSE=\"$VERBOSE\"
-    export USER_FLAGS='${USER_FLAGS[*]}'
+        export REPO_ROOT='$REPO_ROOT'
+        export LIB_DIR='$LIB_DIR'
+        export TOOLS_DIR='$TOOLS_DIR'
+        export VENVDIR='$VENVDIR'
+        export PATH=\"$VENVDIR/bin:\$PATH\"
+        export DRY_RUN=\"$DRY_RUN\"
+        export QUIET=\"$QUIET\"
+        export VERBOSE=\"$VERBOSE\"
+        export USER_FLAGS='${USER_FLAGS[*]}'
 
-    # Dynamically source all helper and installer scripts
-    for f in '$LIB_DIR/helpers/'*.sh '$LIB_DIR/helpers-extra/'*.sh '$LIB_DIR/installers/'*.sh; do
-      [[ -f \"\$f\" ]] && source \"\$f\"
-    done
+        # Dynamically source all helper and installer scripts
+        for f in '\$LIB_DIR/helpers/'*.sh '\$LIB_DIR/helpers-extra/'*.sh '\$LIB_DIR/installers/'*.sh; do
+          [[ -f \"\$f\" ]] && source \"\$f\"
+        done
 
-    $func \"\${USER_FLAGS[*]}\"
-  "
+        $func \"\${USER_FLAGS[*]}\"
+    "
 }
 
 # ----------------------------------------------------------------------
@@ -237,7 +245,6 @@ run_module_as_user() {
 # ----------------------------------------------------------------------
 if [[ "$VM_FLAG" == true ]]; then
   info "Running virtual machine setup..." "$QUIET"
-
   VM_FLAGS=()
   [[ "$DRY_RUN" == true ]] && VM_FLAGS+=("--dry-run")
   [[ "$QUIET" == true ]] && VM_FLAGS+=("--quiet")
