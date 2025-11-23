@@ -15,26 +15,27 @@ install_docker_and_add_users() {
     apt_install curl gnupg lsb-release
 
     # Add Docker's GPG key
-    _cmd "mkdir -p /etc/apt/keyrings"
-    _cmd "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
+    _root_cmd "mkdir -p /etc/apt/keyrings"
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | _root_cmd "gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
 
     # Add Docker repository
-    _cmd 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list'
+    ensure_apt_repo "/etc/apt/sources.list.d/docker.list" \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
 
     # Install Docker packages
     apt_install docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
     # Enable Docker service
-    _cmd "systemctl enable docker --now"
+    _root_cmd "systemctl enable docker --now"
   fi
 
   # Ensure docker group exists
-  groupadd -f docker
+  _root_cmd groupadd -f docker
 
   # Add users to docker group
   for u in "$@"; do
-    require_user "$u"
-    add_user_to_group "$u" docker
+    _root_cmd require_user "$u"
+    _root_cmd add_user_to_group "$u" docker
     ok "Added $u to docker group" "$QUIET"
   done
 
