@@ -1,48 +1,60 @@
+
 #!/usr/bin/env bash
 set -euo pipefail
 IFS=$'\n\t'
 
+# ----------------------------------------------------------------------
+# Setup 'adam' user home repository (pseudohome)
+# ----------------------------------------------------------------------
 setup_pseudohome() {
   local user="adam"
+  local dest_dir="/home/$user/pseudohome"
+  local repo_url="git@github.com:adamamyl/pseudohome.git"
 
-  # --- root tasks ---
-  _cmd "require_user '$user'"
-  _cmd "add_user_to_group '$user' staff"
+  require_user "$user"
 
-  local homedir
-  homedir="$(eval echo "~$user")"
-  local ssh_dir="$homedir/.ssh"
+  info "Setting up pseudohome for $user at $dest_dir..." "$QUIET"
 
-  _cmd "mkdir -p -m 700 '$ssh_dir'"
-  _cmd "chown $user:$user '$ssh_dir'"
+  _cmd "mkdir -p $dest_dir"
+  _cmd "chown $user:$user $dest_dir"
+  _cmd "chmod 700 $dest_dir"
 
-  # Install SSH keys as root
-  _cmd "install_ssh_keys '$user' 'https://github.com/adamamyl.keys'"
+  # SSH deploy key setup
+  local ssh_dir
+  ssh_dir="$(eval echo "~$user")/.ssh"
+  _cmd "mkdir -p -m 700 $ssh_dir"
+  _cmd "chown $user:$user $ssh_dir"
 
-  # --- user tasks ---
-  local repo_url="git@github.com:adamamyl/pseudoadam.git"
-  local dest_dir="$homedir/pseudohome"
+  if [[ ! -f "$ssh_dir/pseudohome" ]]; then
+    info "Generating deploy key for pseudohome..." "$QUIET"
+    _cmd "ssh-keygen -t ed25519 -f $ssh_dir/pseudohome -N '' -C '${user}@$(hostname)'"
+    _cmd "chmod 600 $ssh_dir/pseudohome"
+    _cmd "chown $user:$user $ssh_dir/pseudohome"
+  fi
 
-  if [[ ! -d "$dest_dir" ]]; then
-    _cmd "sudo -H -u '$user' bash -c '
+  info "Ensure the following public key is added to GitHub:"
+  cat "$ssh_dir/pseudohome.pub"
+  read -p "Press Enter once added..."
+
+  # Clone or update repo
+  clone_or_update_repo "$repo_url" "$dest_dir" "$ssh_dir/pseudohome"
+
+  _cmd "chown -R $user:$user $dest_dir"
+  _cmd "chmod -R g+w $dest_dir"
+  _cmd "chmod -s $dest_dir"
+
+  # Optionally run post-install script if exists
+  local installer="$dest_dir/install.sh"
+  if [[ -x "$installer" ]]; then
+    info "Running pseudohome installer script..." "$QUIET"
+    sudo -H -u "$user" bash -c '
       set -euo pipefail
       IFS=$'\''\n\t'\''
-      export PATH=\"$VENVDIR/bin:\$PATH\"
-
-      # Clone repository if missing
-      if [[ ! -d \"$dest_dir\" ]]; then
-        git clone \"$repo_url\" \"$dest_dir\"
-      fi
-
-      chown -R $user:$user \"$dest_dir\"
-      chmod -R g+w \"$dest_dir\"
-
-      # Run symlink installer if executable
-      if [[ -x \"$dest_dir/pseudohome-symlinks\" ]]; then
-        \"$dest_dir/pseudohome-symlinks\"
-      fi
-    '"
-  else
-    _cmd "echo 'Pseudohome already exists, skipping clone and symlinks'"
+      export VENVDIR="'"$VENVDIR"'"
+      export PATH="'"$VENVDIR"'/bin:$PATH"
+      "'"$installer"'"
+    '
   fi
+
+  ok "Pseudohome setup complete for $user" "$QUIET"
 }

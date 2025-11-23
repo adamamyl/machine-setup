@@ -17,5 +17,5 @@ venv_python() {
 # Run a Python script inside venv
 run_in_venv() {
   local script="$1"; shift
-  "$(_venv_python)" "$script" "$@"
+  "$(venv_python)" "$script" "$@"
 }

@@ -23,7 +23,6 @@ setup_hwga_no2id() {
   _cmd "chmod g+w $HWGA_DIR"
   _cmd "chmod -s $HWGA_DIR"
 
-  # Loop through repos
   for repo_name in "${!HWGA_REPOS[@]}"; do
     IFS=':' read -r user dest_dir installer <<< "${HWGA_REPOS[$repo_name]}"
     local ssh_dir
@@ -32,7 +31,6 @@ setup_hwga_no2id() {
     require_user "$user"
     add_user_to_group "$user" docker
 
-    # Ensure user's .ssh exists
     _cmd "mkdir -p -m 700 $ssh_dir"
     _cmd "chown $user:$user $ssh_dir"
 
@@ -40,27 +38,22 @@ setup_hwga_no2id() {
     if [[ ! -f "$ssh_dir/$repo_name" ]]; then
       info "Generating SSH key for $repo_name..." "$QUIET"
       _cmd "ssh-keygen -t ed25519 -f $ssh_dir/$repo_name -N '' -C '${user}@$(hostname)'"
+      _cmd "chmod 600 $ssh_dir/$repo_name"
+      _cmd "chown $user:$user $ssh_dir/$repo_name"
     fi
-    _cmd "chmod 600 $ssh_dir/$repo_name"
-    _cmd "chown $user:$user $ssh_dir/$repo_name"
 
-    # Prompt user to add public key if first time
     info "Ensure this public key is added to GitHub for repo $repo_name:"
     cat "$ssh_dir/$repo_name.pub"
     read -p "Press Enter once added..."
 
     # Determine repo URL
     local repo_url
-    if [[ "$repo_name" == "herewegoagain" ]]; then
-      repo_url="$NO2ID_REPO"
-    else
-      repo_url="$FAKE_LE_REPO"
-    fi
+    [[ "$repo_name" == "herewegoagain" ]] && repo_url="$NO2ID_REPO" || repo_url="$FAKE_LE_REPO"
 
     # Run Python deploy key script using venv
     run_github_deploy_key "$repo_url" "$ssh_dir/$repo_name"
 
-    # Clone or update repo using correct deploy key
+    # Clone or update repo using deploy key
     clone_or_update_repo "$repo_url" "$dest_dir" "$ssh_dir/$repo_name"
 
     # Ensure repo ownership and permissions
@@ -71,10 +64,13 @@ setup_hwga_no2id() {
     # Run installer if specified and executable
     if [[ -n "$installer" && -x "$dest_dir/$installer" ]]; then
       info "Running installer for $repo_name..." "$QUIET"
-      sudo -H -u "$user" bash -c "
-        export PATH=\"$VENVDIR/bin:\$PATH\"
-        $dest_dir/$installer
-      "
+      sudo -H -u "$user" bash -c '
+        set -euo pipefail
+        IFS=$'\''\n\t'\''
+        export VENVDIR="'"$VENVDIR"'"
+        export PATH="'"$VENVDIR"'/bin:$PATH"
+        "'"$dest_dir"'/$installer"
+      '
     elif [[ -n "$installer" ]]; then
       warn "Installer $installer for $repo_name not executable, skipping" "$QUIET"
     fi

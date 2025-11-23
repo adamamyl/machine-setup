@@ -32,7 +32,7 @@ VM_FLAG=false
 VM_USER=""
 
 # ----------------------------------------------------------------------
-# Source library scripts by category for consistency
+# Source library scripts by category
 # ----------------------------------------------------------------------
 
 # Helpers first
@@ -55,7 +55,7 @@ source "$LIB_DIR/sudoers.sh"
 source "$LIB_DIR/installers/github-deploy-key.sh"
 source "$LIB_DIR/sshkeys.sh"
 
-# export functions/helpers so subshells/sudo can use them:
+# Export module functions for sudo subshells
 export -f setup_pseudohome
 export -f setup_hwga_no2id
 
@@ -94,26 +94,6 @@ Module options:
     --cloud-init           Install post-cloud-init scripts (Linux only)
     --all-the-packages     Install standard packages & update-all-the-packages
     --all                  Run all tasks
-
-Notes:
-------
-- For deploying SSH keys to GitHub (e.g., no2id-docker), you may need a Personal Access Token:
-  * Classic token: 'repo' scope (full control of private repos)
-  * Fine-grained token: select organization, repo access to the repository, "Read & Write" deploy keys
-  * Export token as: export GITHUB_TOKEN=ghp_xxxxxxxx
-  * GitHub token required if using private or org repositories
-  * URL: https://github.com/settings/tokens
-
-- Optional network check can be enabled with --check-online
-- Python 3 and virtualenv will be installed automatically if missing (venv at $VENVDIR)
-- Each module can be run individually or with --all
-- By default, runs 'apt autoremove' at the end; use --no-autoremove to skip
-
-- --vm | --virtmachine
-  - Run VM setup for user 'adam' interactively
-    - sudo ./setup-machine.sh --vm --vm-user adam --verbose
-  - Dry-run only
-    - sudo ./setup-machine.sh --vm --dry-run
 EOF
 }
 
@@ -158,7 +138,6 @@ require_root
 # ----------------------------------------------------------------------
 # Root SSH keys + Python/venv
 # ----------------------------------------------------------------------
-export REPO_ROOT
 install_root_ssh_keys
 ensure_python_and_venv
 export VENVDIR="/opt/setup-venv"
@@ -181,45 +160,41 @@ while IFS= read -r flag; do
     USER_FLAGS+=("$flag")
 done < <(build_user_flags)
 
-# Export global flags for sub-scripts
-export DRY_RUN QUIET VERBOSE VM_USER
-export USER_FLAGS
+export DRY_RUN QUIET VERBOSE VM_USER USER_FLAGS
 
 # ----------------------------------------------------------------------
-# Helper to run a module as a user safely in the venv
+# Helper: run a module function as a specified user
 # ----------------------------------------------------------------------
 run_module_as_user() {
-    local user="$1"
-    shift
-    local func="$1"
-    shift
+  local user="$1"
+  shift
+  local func="$1"
+  shift
 
-    sudo -H -u "$user" bash -c '
-        set -euo pipefail
-        IFS=$'\''\n\t'\''
-        export REPO_ROOT="'"$REPO_ROOT"'"
-        export LIB_DIR="'"$LIB_DIR"'"
-        export TOOLS_DIR="'"$TOOLS_DIR"'"
-        export VENVDIR="'"$VENVDIR"'"
-        export PATH="'"$VENVDIR"'/bin:$PATH"
-        export DRY_RUN="'"$DRY_RUN"'"
-        export QUIET="'"$QUIET"'"
-        export VERBOSE="'"$VERBOSE"'"
-        export USER_FLAGS="'"${USER_FLAGS[*]}"'"
+  sudo -H -u "$user" bash -c '
+    set -euo pipefail
+    IFS=$'\''\n\t'\''
+    export REPO_ROOT="'"$REPO_ROOT"'"
+    export LIB_DIR="'"$LIB_DIR"'"
+    export TOOLS_DIR="'"$TOOLS_DIR"'"
+    export VENVDIR="'"$VENVDIR"'"
+    export PATH="'"$VENVDIR"'/bin:$PATH"
+    export DRY_RUN="'"$DRY_RUN"'"
+    export QUIET="'"$QUIET"'"
+    export VERBOSE="'"$VERBOSE"'"
 
-        # Source all helpers and installers first
-        for f in "$LIB_DIR/helpers/"*.sh "$LIB_DIR/helpers-extra/"*.sh "$LIB_DIR/installers/"*.sh; do
-            [[ -f "$f" ]] && source "$f"
-        done
+    # Source all helpers and installers inside the user context
+    for f in "$LIB_DIR/helpers/"*.sh "$LIB_DIR/helpers-extra/"*.sh "$LIB_DIR/installers/"*.sh; do
+      [[ -f "$f" ]] && source "$f"
+    done
 
-        # Call the function passed as $1, with remaining args
-        "$@"
-    ' _ "$func" "$@"
+    # Call the function passed as $1 with remaining args
+    "$@"
+  ' _ "$func" "$@"
 }
 
-
 # ----------------------------------------------------------------------
-# Run selected modules (order matters)
+# Run selected modules in proper order
 # ----------------------------------------------------------------------
 
 # Tailscale
@@ -238,16 +213,12 @@ run_module_as_user() {
 [[ "$DO_ALL" == true || "$DO_SUDOERS" == true ]] && setup_sudoers_staff "/etc/sudoers.d/staff"
 
 # Run pseudohome as adam user
-[[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] && \
-  run_module_as_user "adam" "setup_pseudohome"
+[[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] && run_module_as_user "adam" "setup_pseudohome"
 
 # Run HWGA / no2id as no2id-docker user
-[[ "$DO_ALL" == true || "$DO_HWGA" == true ]] && \
-  run_module_as_user "no2id-docker" "setup_hwga_no2id"
+[[ "$DO_ALL" == true || "$DO_HWGA" == true ]] && run_module_as_user "no2id-docker" "setup_hwga_no2id"
 
-# ----------------------------------------------------------------------
 # Virtual machine setup
-# ----------------------------------------------------------------------
 if [[ "$VM_FLAG" == true ]]; then
   info "Running virtual machine setup..." "$QUIET"
   VM_FLAGS=()
@@ -266,9 +237,6 @@ if [[ "$(uname -s)" == "Linux" && is_ubuntu_desktop ]]; then
 fi
 
 # Optional apt autoremove
-if [[ "$DO_AUTOREMOVE" == true ]]; then
-  info "Running apt autoremove..."
-  apt_autoremove
-fi
+[[ "$DO_AUTOREMOVE" == true ]] && apt_autoremove
 
 ok "All requested tasks completed."
