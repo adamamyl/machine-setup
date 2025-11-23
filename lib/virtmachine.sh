@@ -122,8 +122,8 @@ fi
 # ----------------------------------------------------------------------
 UTM_MOUNT="/mnt/utm"
 if [[ ! -d "$UTM_MOUNT" ]]; then
-  _root_cmd "mkdir -p $UTM_MOUNT"
-  _root_cmd "chown $VM_USER:$VM_USER $UTM_MOUNT"
+  _root_cmd "safe_mkdir -p $UTM_MOUNT"
+  _root_cmd "safe_chown $VM_USER:$VM_USER $UTM_MOUNT"
 else
   info "$UTM_MOUNT already exists" "$QUIET"
 fi

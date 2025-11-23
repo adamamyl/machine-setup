@@ -15,10 +15,10 @@ install_linux_repos() {
 	local base_dir="/usr/local/src"
 
 	# Prepare base dir
-	mkdir -p "$base_dir"
+	safe_mkdir -p "$base_dir"
 	chgrp docker "$base_dir" || true
-	chmod g+w "$base_dir"   # writable by group
-	chmod -s "$base_dir"    # remove sticky/setgid bits
+	safe_chmod g+w "$base_dir"   # writable by group
+	safe_chmod -s "$base_dir"    # remove sticky/setgid bits
 
 	for repo_name in "${!REPOS[@]}"; do
 		local repo_url="${REPOS[$repo_name]}"
@@ -27,7 +27,7 @@ install_linux_repos() {
 
 		if [[ ! -d "$dest_dir" ]]; then
 			info "Cloning $repo_name"
-			git clone "$repo_url" "$dest_dir"
+			safe_git clone "$repo_url" "$dest_dir"
 		else
 			ok "$dest_dir already exists, skipping clone"
 		fi
@@ -36,7 +36,7 @@ install_linux_repos() {
 			local install_path="$dest_dir/$installer"
 			if [[ ! -x "$install_path" ]]; then
 				info "Making $install_path executable"
-				chmod +x "$install_path"
+				safe_chmod +x "$install_path"
 			fi
 			info "Running $install_path"
 			"$install_path"

@@ -7,10 +7,10 @@ IFS=$'\n\t'
 # ----------------------------------------------------------------------
 install_linux_repos() {
   local base_dir="/usr/local/src"
-  _root_cmd "mkdir -p $base_dir"
-  _root_cmd "chgrp docker $base_dir || true"
-  _root_cmd "chmod g+w $base_dir"
-  _root_cmd "chmod -s $base_dir"
+  _root_cmd "safe_mkdir -p $base_dir"
+  _root_cmd "safe_chgrp safe_docker $base_dir || true"
+  _root_cmd "safe_chmod g+w $base_dir"
+  _root_cmd "safe_chmod -s $base_dir"
 
   # Repos and their installer scripts
   declare -A repos=(
@@ -31,9 +31,9 @@ install_linux_repos() {
     clone_or_update_repo "$repo_url" "$dest_dir"
 
     # Fix permissions
-    _root_cmd "chown -R root:root $dest_dir"
-    _root_cmd "chmod -R g+w $dest_dir"
-    _root_cmd "chmod -s $dest_dir"
+    _root_cmd "safe_chown -R root:root $dest_dir"
+    _root_cmd "safe_chmod -R g+w $dest_dir"
+    _root_cmd "safe_chmod -s $dest_dir"
 
     # Full path to installer
     local install_path="$dest_dir/$installer"

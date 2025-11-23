@@ -108,6 +108,56 @@ safe_find() {
 }
 alias find='safe_find'
 
+# Usage: safe_chgrp "group" "/path/to/dir_or_file"
+safe_chgrp() {
+  local group="$1"
+  local target="$2"
+
+  if [[ "$DRY_RUN" == true ]]; then
+    info "[DRY-RUN] chgrp $group $target"
+  else
+    chgrp "$group" "$target"
+    info "Executed chgrp $group $target"
+  fi
+}
+alias chgrp='safe_chgrp'
+
+safe_groupadd() {
+  local flags="$*"
+  if [[ "$DRY_RUN" == true ]]; then
+    info "[DRY-RUN] groupadd $flags"
+  else
+    groupadd $flags
+    info "Executed groupadd $flags"
+  fi
+}
+alias groupadd='safe_groupadd'
+
+safe_getent() {
+  local database="$1"
+  shift
+  local query=("$@")
+
+  if [[ "$DRY_RUN" == true ]]; then
+    info "[DRY-RUN] getent $database ${query[*]}"
+  else
+    getent "$database" "${query[@]}"
+    info "Executed getent $database ${query[*]}"
+  fi
+}
+alias getent='safe_getent'
+
+# Usage: safe_usermod [flags] user
+safe_usermod() {
+  if [[ "$DRY_RUN" == true ]]; then
+    info "[DRY-RUN] usermod $*"
+  else
+    usermod "$@"
+    info "Executed usermod $*"
+  fi
+}
+alias usermod='safe_usermod'
+
 # ------------------------
 # Simple commands (no path/flags handling)
 # ------------------------

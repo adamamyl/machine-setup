@@ -222,9 +222,9 @@ run_module_as_user() {
       ensure_dir() {
         local dir="$1"
         if [[ "$DRY_RUN" == true ]]; then
-          info "[DRY-RUN] mkdir -p $dir"
+          info "[DRY-RUN] safe_mkdir -p $dir"
         else
-          [[ -d "$dir" ]] || mkdir -p "$dir"
+          [[ -d "$dir" ]] || safe_mkdir -p "$dir"
           info "Ensured directory exists: $dir"
         fi
       }

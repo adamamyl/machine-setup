@@ -10,9 +10,9 @@ set -euo pipefail
 # - Behaves exactly like _cmd, but elevated
 #
 # Examples:
-#   _root_cmd "mkdir -p /usr/local/src"
-#   _root_cmd "groupadd -f docker"
-#   _root_cmd "usermod -aG docker no2id || true"
+#   _root_cmd "safe_mkdir -p /usr/local/src"
+#   _root_cmd "safe_groupadd -f docker"
+#   _root_cmd "safe_usermod -aG docker no2id || true"
 # ----------------------------------------------------------------------
 _root_cmd() {
   # Dry run handling
