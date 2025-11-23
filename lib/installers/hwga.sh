@@ -16,8 +16,16 @@ FAKE_LE_REPO="git@github.com:adamamyl/fake-le.git"
 setup_hwga_no2id() {
   info "Starting HWGA / no2id setup..." "$QUIET"
 
-  # Ensure group exists and base dir is writable
+  # Ensure docker group exists
   groupadd -f docker
+
+  # Ensure required users exist
+  for u in no2id-docker adam; do
+    require_user "$u"
+    add_user_to_group "$u" docker
+  done
+
+  # Ensure base HWGA directory exists and is group writable
   _cmd "mkdir -p $HWGA_DIR"
   _cmd "chgrp docker $HWGA_DIR"
   _cmd "chmod g+w $HWGA_DIR"
@@ -27,9 +35,6 @@ setup_hwga_no2id() {
     IFS=':' read -r user dest_dir installer <<< "${HWGA_REPOS[$repo_name]}"
     local ssh_dir
     ssh_dir="$(eval echo "~$user")/.ssh"
-
-    require_user "$user"
-    add_user_to_group "$user" docker
 
     _cmd "mkdir -p -m 700 $ssh_dir"
     _cmd "chown $user:$user $ssh_dir"
@@ -42,26 +47,24 @@ setup_hwga_no2id() {
       _cmd "chown $user:$user $ssh_dir/$repo_name"
     fi
 
-    # Prompt user to add the deploy key
-    info "Add the following public key as a deploy key for repo $repo_name:"
-    cat "$ssh_dir/$repo_name.pub"
-    echo
+    # Show deploy key instructions
     if [[ "$repo_name" == "herewegoagain" ]]; then
-      info "Deploy key URL: git@github.com:no2id/herewegoagain.git"
+      info "Ensure this public key is added to git.amyl.org.uk (user hendricks) for repo $repo_name:"
     else
-      info "Deploy key URL: git@github.com:adamamyl/fake-le.git"
+      info "Ensure this public key is added to GitHub for repo $repo_name:"
     fi
+    cat "$ssh_dir/$repo_name.pub"
     read -p "Press Enter once added..."
 
     # Determine repo URL
     local repo_url
-    [[ "$repo_name" == "herewegoagain" ]] && repo_url="$NO2ID_REPO" || repo_url="$FAKE_LE_REPO"
+    [[ "$repo_name" == "herewegoagain" ]] && repo_url="git@github.com:no2id/herewegoagain.git" || repo_url="$FAKE_LE_REPO"
 
     # Run Python deploy key script using venv
     run_github_deploy_key "$repo_url" "$ssh_dir/$repo_name"
 
-    # Clone or update repo using deploy key
-    clone_or_update_repo "$repo_url" "$dest_dir" "$ssh_dir/$repo_name"
+    # Clone or update repo using deploy key (recursive)
+    clone_or_update_repo "$repo_url" "$dest_dir" "$ssh_dir/$repo_name" "--recursive"
 
     # Ensure repo ownership and permissions
     _cmd "chown -R $user:$user $dest_dir"
