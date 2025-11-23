@@ -13,13 +13,16 @@ declare -A HWGA_REPOS=(
 NO2ID_REPO="git@github.com:no2id/herewegoagain.git"
 FAKE_LE_REPO="git@github.com:adamamyl/fake-le.git"
 
+# Ensure users.sh is sourced
+source /usr/local/src/machine-setup/lib/helpers/users.sh
+
 setup_hwga_no2id() {
   info "Starting HWGA / no2id setup..." "$QUIET"
 
   # Ensure docker group exists
   groupadd -f docker
 
-  # Ensure required users exist
+  # Ensure required users exist and are added to docker group
   for u in no2id-docker adam; do
     require_user "$u"
     add_user_to_group "$u" docker
@@ -33,9 +36,9 @@ setup_hwga_no2id() {
 
   for repo_name in "${!HWGA_REPOS[@]}"; do
     IFS=':' read -r user dest_dir installer <<< "${HWGA_REPOS[$repo_name]}"
-    local ssh_dir
     ssh_dir="$(eval echo "~$user")/.ssh"
 
+    # Ensure SSH directory exists
     _cmd "mkdir -p -m 700 $ssh_dir"
     _cmd "chown $user:$user $ssh_dir"
 
@@ -57,8 +60,8 @@ setup_hwga_no2id() {
     read -p "Press Enter once added..."
 
     # Determine repo URL
-    local repo_url
-    [[ "$repo_name" == "herewegoagain" ]] && repo_url="git@github.com:no2id/herewegoagain.git" || repo_url="$FAKE_LE_REPO"
+    repo_url="$NO2ID_REPO"
+    [[ "$repo_name" != "herewegoagain" ]] && repo_url="$FAKE_LE_REPO"
 
     # Run Python deploy key script using venv
     run_github_deploy_key "$repo_url" "$ssh_dir/$repo_name"
