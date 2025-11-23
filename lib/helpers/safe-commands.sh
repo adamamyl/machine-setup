@@ -95,6 +95,19 @@ safe_chmod() {
 }
 alias chmod='safe_chmod'
 
+# Usage: safe_find <path> [find-options]
+safe_find() {
+  local path="$1"
+  shift
+  if [[ "$DRY_RUN" == true ]]; then
+    info "[DRY-RUN] find $path $*"
+  else
+    find "$path" "$@"
+    info "Executed find $path $*"
+  fi
+}
+alias find='safe_find'
+
 # ------------------------
 # Simple commands (no path/flags handling)
 # ------------------------
