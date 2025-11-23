@@ -16,6 +16,8 @@ ssh_dir="$(eval echo "~$user")/.ssh"
 
 require_user "$user"
 add_user_to_group "$user" docker
+add_user_to_group "$user" staff
+
 
 _cmd "mkdir -p $ssh_dir -m 700"
 _cmd "chown $user:$user $ssh_dir"
