@@ -35,6 +35,9 @@ VM_USER=""
 # Source library scripts by category
 # ----------------------------------------------------------------------
 
+# Source debug library first to enable debug early
+source "$LIB_DIR/helpers/debug.sh"
+
 # Helpers first
 for f in "$LIB_DIR/helpers/"*.sh; do
   [[ -f "$f" ]] && source "$f"
@@ -102,6 +105,16 @@ EOF
 # ----------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --debug)
+      shift
+        if [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]]; then
+          DEBUG_LEVEL="$1"
+        shift
+        else
+          DEBUG_LEVEL=1
+        fi
+      enable_debug "$DEBUG_LEVEL"
+      ;;
     --help) show_help; exit 0 ;;
     --dry-run) DRY_RUN=true ;;
     --force) FORCE=true ;;
@@ -182,6 +195,10 @@ run_module_as_user() {
     export DRY_RUN="'"$DRY_RUN"'"
     export QUIET="'"$QUIET"'"
     export VERBOSE="'"$VERBOSE"'"
+
+    # Source debug library inside user context
+    source "$LIB_DIR/helpers/debug.sh"
+    [[ "$DEBUG" == true ]] && enable_debug "$DEBUG_LEVEL"
 
     # Source all helpers and installers inside the user context
     for f in "$LIB_DIR/helpers/"*.sh "$LIB_DIR/helpers-extra/"*.sh "$LIB_DIR/installers/"*.sh; do

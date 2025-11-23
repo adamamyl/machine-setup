@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Default debug flags
+DEBUG="${DEBUG:-false}"
+DEBUG_LEVEL="${DEBUG_LEVEL:-1}"
 IFS=$'\n\t'
 
 # ----------------------------------------------------------------------
@@ -7,6 +11,39 @@ IFS=$'\n\t'
 # ----------------------------------------------------------------------
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"  # one level up from lib/
 LIB_DIR="$REPO_ROOT/lib"
+
+# Source debug helper
+source "$LIB_DIR/helpers/debug.sh"
+# Enable debug if requested via ENV
+[[ "$DEBUG" == true ]] && enable_debug "$DEBUG_LEVEL"
+
+# Parse --debug and optional level from CLI
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --debug)
+        DEBUG=true
+        shift
+        if [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]]; then
+          DEBUG_LEVEL="$1"
+          shift
+        else
+          DEBUG_LEVEL=1
+        fi
+        VERBOSE=true  # debug implies verbose
+        enable_debug "$DEBUG_LEVEL"
+        ;;
+    --verbose) VERBOSE=true; shift ;;
+    --quiet) QUIET=true; shift ;;
+    --user)
+        shift
+        VM_USER="$1"
+        shift
+        ;;
+    *)
+      break
+      ;;
+  esac
+done
 
 # ----------------------------------------------------------------------
 # Source helpers
@@ -23,27 +60,8 @@ DRY_RUN=false
 QUIET=false
 VERBOSE=false
 VM_USER=""
-
-# ----------------------------------------------------------------------
-# Parse CLI flags
-# ----------------------------------------------------------------------
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --dry-run) DRY_RUN=true ;;
-    --quiet) QUIET=true ;;
-    --verbose) VERBOSE=true ;;
-    --user)
-      shift
-      VM_USER="$1"
-      ;;
-    *)
-      err "Unknown argument to virtmachine.sh: $1"
-      exit 1
-      ;;
-  esac
-  shift
-done
-
+DEBUG="${DEBUG:-false}"
+DEBUG_LEVEL="${DEBUG_LEVEL:-1}"
 # Default VM user if not specified
 VM_USER="${VM_USER:-adam}"
 
@@ -54,7 +72,15 @@ _cmd() {
   if [[ "$DRY_RUN" == true ]]; then
     info "[DRY-RUN] $*" "$QUIET"
   else
-    eval "$@"
+    if [[ "$DEBUG" == true ]]; then
+      # Run command with set -o errexit so failures are caught
+      eval "$@" || {
+          err "Command failed: $*"
+          return 1
+        }
+    else
+      eval "$@"
+    fi
   fi
 }
 
@@ -133,7 +159,7 @@ fi
 # ----------------------------------------------------------------------
 FSTAB_LINE="share $UTM_MOUNT 9p trans=virtio,version=9p2000.L,rw,_netdev,nofail,auto 0 0"
 if ! grep -qF "$FSTAB_LINE" /etc/fstab; then
-  _cmd "echo '$FSTAB_LINE' >> /etc/fstab"
+  _cmd bash -c "echo '$FSTAB_LINE' >> /etc/fstab"
 fi
 
 ok "Virtual machine setup completed ✅" "$QUIET"
