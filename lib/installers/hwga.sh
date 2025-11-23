@@ -42,8 +42,15 @@ setup_hwga_no2id() {
       _cmd "chown $user:$user $ssh_dir/$repo_name"
     fi
 
-    info "Ensure this public key is added to GitHub for repo $repo_name:"
+    # Prompt user to add the deploy key
+    info "Add the following public key as a deploy key for repo $repo_name:"
     cat "$ssh_dir/$repo_name.pub"
+    echo
+    if [[ "$repo_name" == "herewegoagain" ]]; then
+      info "Deploy key URL: git@github.com:no2id/herewegoagain.git"
+    else
+      info "Deploy key URL: git@github.com:adamamyl/fake-le.git"
+    fi
     read -p "Press Enter once added..."
 
     # Determine repo URL
