@@ -1,61 +1,44 @@
-
 #!/usr/bin/env bash
 set -euo pipefail
 IFS=$'\n\t'
 
-# ----------------------------------------------------------------------
-# Setup 'adam' user home repository (pseudohome)
-# ----------------------------------------------------------------------
+
+# Source helpers dynamically, avoiding double /lib
+USER_HELPERS="$LIB_DIR/helpers/users.sh"
+HWGA_HELPERS="$LIB_DIR/installers/hwga.sh"
+
+[[ -f "$USER_HELPERS" ]] || { echo "Cannot find users.sh"; exit 1; }
+[[ -f "$HWGA_HELPERS" ]] || { echo "Cannot find hwga.sh"; exit 1; }
+
+source "$USER_HELPERS"
+source "$HWGA_HELPERS"
+
 setup_pseudohome() {
-local user="adam"
-local dest_dir="/home/$user/pseudohome"
-local repo_name="pseudohome"
-local repo_url="adam@git.amyl.org.uk:/data/git/pseudoadam"
-local ssh_dir
-ssh_dir="$(eval echo "~$user")/.ssh"
+  local user="adam"
+  local dest_dir="/home/$user/pseudohome"
+  local repo_name="pseudohome"
+  local repo_url="adam@git.amyl.org.uk:/data/git/pseudoadam"
 
-require_user "$user"
-add_user_to_group "$user" docker
-add_user_to_group "$user" staff
+  users_to_groups_if_needed "$user" docker staff
+  ssh_dir=$(create_if_needed_ssh_dir "$user")
+  create_if_needed_ssh_key "$user" "$ssh_dir" "$repo_name"
+  display_key_and_url_for_each_repo "$user" "$ssh_dir" "$repo_name" "$repo_url"
 
+  clone_repo "$user" "$ssh_dir/$repo_name" "$repo_url" "$dest_dir" "--recursive"
+  set_homedir_perms_recursively "$user" "$dest_dir"
+  set_ssh_perms "$user" "$ssh_dir"
 
-_cmd "mkdir -p $ssh_dir -m 700"
-_cmd "chown $user:$user $ssh_dir"
+  local installer="$dest_dir/pseudohome-symlinks"
+  if [[ -x "$installer" ]]; then
+    info "Running pseudohome installer script..." "$QUIET"
+    sudo -H -u "$user" bash -c '
+      set -euo pipefail
+      IFS=$'\''\n\t'\''
+      export VENVDIR="'"$VENVDIR"'"
+      export PATH="'"$VENVDIR"'/bin:$PATH"
+      "'"$installer"'"
+    '
+  fi
 
-# Generate deploy key if missing
-if [[ ! -f "$ssh_dir/$repo_name" ]]; then
-  info "Generating SSH key for $repo_name..." "$QUIET"
-  _cmd "ssh-keygen -t ed25519 -f $ssh_dir/$repo_name -N '' -C '${user}@$(hostname)'"
-  _cmd "chmod 600 $ssh_dir/$repo_name"
-  _cmd "chown $user:$user $ssh_dir/$repo_name"
-fi
-
-# Inform user to add key
-info "Add the following public key as a deploy key to git.amyl.org.uk (hendricks user) for $repo_name:"
-cat "$ssh_dir/$repo_name.pub"
-echo
-info "Deploy key URL: git@git.amyl.org.uk:/data/git/pseudoadam"
-read -p "Press Enter once added..."
-
-# Clone/update repo recursively
-clone_or_update_repo "$repo_url" "$dest_dir" "$ssh_dir/$repo_name" "--recursive"
-
-_cmd "chown -R $user:$user $dest_dir"
-_cmd "chmod -R g+w $dest_dir"
-_cmd "chmod -s $dest_dir"
-
-# Run post-install script if exists
-local installer="$dest_dir/pseudohome-symlinks"
-if [[ -x "$installer" ]]; then
-  info "Running pseudohome installer script..." "$QUIET"
-  sudo -H -u "$user" bash -c '
-    set -euo pipefail
-    IFS=$'\''\n\t'\''
-    export VENVDIR="'"$VENVDIR"'"
-    export PATH="'"$VENVDIR"'/bin:$PATH"
-    "'"$installer"'"
-  '
-fi
-
-ok "Pseudohome setup complete for $user" "$QUIET"
+  ok "Pseudohome setup complete for $user" "$QUIET"
 }

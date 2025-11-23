@@ -52,6 +52,7 @@ source "$LIB_DIR/helpers/colors.sh"
 source "$LIB_DIR/helpers/logging.sh"
 source "$LIB_DIR/helpers-extra/apt-behaviour.sh"
 source "$LIB_DIR/platform.sh"
+source "$LIB_DIR/helpers-extra/root-cmd.sh"
 
 # ----------------------------------------------------------------------
 # Default VM flags
@@ -121,8 +122,8 @@ fi
 # ----------------------------------------------------------------------
 UTM_MOUNT="/mnt/utm"
 if [[ ! -d "$UTM_MOUNT" ]]; then
-  _cmd "mkdir -p $UTM_MOUNT"
-  _cmd "chown $VM_USER:$VM_USER $UTM_MOUNT"
+  _root_cmd "mkdir -p $UTM_MOUNT"
+  _root_cmd "chown $VM_USER:$VM_USER $UTM_MOUNT"
 else
   info "$UTM_MOUNT already exists" "$QUIET"
 fi
@@ -151,7 +152,7 @@ done
 # If both enabled, disable systemd-networkd
 if systemctl is-enabled NetworkManager-wait-online.service &>/dev/null \
    && systemctl is-enabled systemd-networkd-wait-online.service &>/dev/null; then
-  _cmd "systemctl disable systemd-networkd.service"
+  _root_cmd "systemctl disable systemd-networkd.service"
 fi
 
 # ----------------------------------------------------------------------
@@ -159,7 +160,7 @@ fi
 # ----------------------------------------------------------------------
 FSTAB_LINE="share $UTM_MOUNT 9p trans=virtio,version=9p2000.L,rw,_netdev,nofail,auto 0 0"
 if ! grep -qF "$FSTAB_LINE" /etc/fstab; then
-  _cmd bash -c "echo '$FSTAB_LINE' >> /etc/fstab"
+  _root_cmd bash -c "echo '$FSTAB_LINE' >> /etc/fstab"
 fi
 
 ok "Virtual machine setup completed ✅" "$QUIET"

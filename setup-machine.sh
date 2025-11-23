@@ -60,7 +60,7 @@ source "$LIB_DIR/sshkeys.sh"
 
 # Export module functions for sudo subshells
 export -f setup_pseudohome
-export -f setup_hwga_no2id
+export -f setup_hwga
 
 require_root() { 
   if [[ $(id -u) -ne 0 ]]; then 
@@ -179,35 +179,75 @@ export DRY_RUN QUIET VERBOSE VM_USER USER_FLAGS
 # Helper: run a module function as a specified user
 # ----------------------------------------------------------------------
 run_module_as_user() {
-  local user="$1"
-  shift
-  local func="$1"
-  shift
+    local user="$1"
+    shift
+    local module_cmd=("$@")
 
-  sudo -H -u "$user" bash -c '
-    set -euo pipefail
-    IFS=$'\''\n\t'\''
-    export REPO_ROOT="'"$REPO_ROOT"'"
-    export LIB_DIR="'"$LIB_DIR"'"
-    export TOOLS_DIR="'"$TOOLS_DIR"'"
-    export VENVDIR="'"$VENVDIR"'"
-    export PATH="'"$VENVDIR"'/bin:$PATH"
-    export DRY_RUN="'"$DRY_RUN"'"
-    export QUIET="'"$QUIET"'"
-    export VERBOSE="'"$VERBOSE"'"
+    if [[ -z "$user" ]]; then
+        err "User not specified"
+        return 1
+    fi
 
-    # Source debug library inside user context
-    source "$LIB_DIR/helpers/debug.sh"
-    [[ "$DEBUG" == true ]] && enable_debug "$DEBUG_LEVEL"
+    if [[ ${#module_cmd[@]} -eq 0 ]]; then
+        err "No command/function specified"
+        return 1
+    fi
 
-    # Source all helpers and installers inside the user context
-    for f in "$LIB_DIR/helpers/"*.sh "$LIB_DIR/helpers-extra/"*.sh "$LIB_DIR/installers/"*.sh; do
-      [[ -f "$f" ]] && source "$f"
-    done
+    # Export environment variables for sudo
+    export REPO_ROOT LIB_DIR TOOLS_DIR VENVDIR
+    export DRY_RUN="${DRY_RUN:-false}"
+    export QUIET="${QUIET:-false}"
+    export VERBOSE="${VERBOSE:-false}"
 
-    # Call the function passed as $1 with remaining args
-    "$@"
-  ' _ "$func" "$@"
+    # Capture all shell functions to restore inside sudo
+    local all_functions
+    all_functions="$(declare -f)"
+
+    # Run as user
+    sudo -H -u "$user" bash -c '
+      set -euo pipefail
+      IFS=$'\''\n\t'\''
+
+      # Restore environment
+      export REPO_ROOT="$REPO_ROOT"
+      export LIB_DIR="$LIB_DIR"
+      export TOOLS_DIR="$TOOLS_DIR"
+      export VENVDIR="$VENVDIR"
+      export PATH="$VENVDIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      export DRY_RUN="$DRY_RUN"
+      export QUIET="$QUIET"
+      export VERBOSE="$VERBOSE"
+
+      # Helper: safely create directories
+      ensure_dir() {
+        local dir="$1"
+        if [[ "$DRY_RUN" == true ]]; then
+          info "[DRY-RUN] mkdir -p $dir"
+        else
+          [[ -d "$dir" ]] || mkdir -p "$dir"
+          info "Ensured directory exists: $dir"
+        fi
+      }
+
+      # Source debug library
+      [[ -f "$LIB_DIR/helpers/debug.sh" ]] && source "$LIB_DIR/helpers/debug.sh"
+      [[ "${DEBUG:-false}" == true ]] && enable_debug "${DEBUG_LEVEL:-0}"
+
+      # Source helpers and installers
+      for f in "$LIB_DIR/helpers/"*.sh "$LIB_DIR/helpers-extra/"*.sh "$LIB_DIR/installers/"*.sh; do
+        [[ -f "$f" ]] && source "$f"
+      done
+
+      # Import all functions from calling shell
+      '"$all_functions"'
+
+      # Execute the function or command
+      if [[ "$DRY_RUN" == true ]]; then
+        info "[DRY-RUN] (user: '"$user"') $*"
+      else
+        "$@"
+      fi
+  ' _ "${module_cmd[@]}"
 }
 
 # ----------------------------------------------------------------------
@@ -233,7 +273,7 @@ run_module_as_user() {
 [[ "$DO_ALL" == true || "$DO_PSEUDOHOME" == true ]] && run_module_as_user "adam" "setup_pseudohome"
 
 # Run HWGA / no2id as no2id-docker user
-[[ "$DO_ALL" == true || "$DO_HWGA" == true ]] && run_module_as_user "no2id-docker" "setup_hwga_no2id"
+[[ "$DO_ALL" == true || "$DO_HWGA" == true ]] && run_module_as_user "no2id-docker" "setup_hwga"
 
 # Virtual machine setup
 if [[ "$VM_FLAG" == true ]]; then
