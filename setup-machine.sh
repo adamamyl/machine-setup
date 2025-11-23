@@ -6,9 +6,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$REPO_ROOT/lib"
 TOOLS_DIR="$REPO_ROOT/tools"
 
-# Export globals so sudo sub-shells can see them
-export REPO_ROOT LIB_DIR TOOLS_DIR
-
 # Global flags
 DRY_RUN=false
 FORCE=false
@@ -18,6 +15,16 @@ DO_CHECK_ONLINE=false
 DO_AUTOREMOVE=true
 VENVDIR="/opt/setup-venv"
 export VENVDIR
+
+# Global debug-subshell flag
+DEBUG_SUBSHELL=false
+export DEBUG_SUBSHELL
+
+# ----------------------------------------------------------------------
+# Global flag for enabling verbose sudo subshells
+# ----------------------------------------------------------------------
+DEBUG_SUBSHELL=false
+export DEBUG_SUBSHELL
 
 # Module flags
 DO_PSEUDOHOME=false
@@ -136,6 +143,9 @@ while [[ $# -gt 0 ]]; do
       shift
       VM_USER="$1"
       ;;
+    --debug-subshell)
+      DEBUG_SUBSHELL=true
+      ;;
     *) err "Unknown argument: $1"; exit 1 ;;
   esac
   shift
@@ -177,77 +187,130 @@ export DRY_RUN QUIET VERBOSE VM_USER USER_FLAGS
 
 # ----------------------------------------------------------------------
 # Helper: run a module function as a specified user
+# All commands run via this function automatically get safe_* wrappers
+# Optional debug block triggered by argument --debug-subshell
 # ----------------------------------------------------------------------
 run_module_as_user() {
-    local user="$1"
-    shift
-    local module_cmd=("$@")
+  local user="$1"
+  shift
 
-    if [[ -z "$user" ]]; then
-        err "User not specified"
-        return 1
-    fi
+  # Check if --debug-subshell passed, fallback to global DEBUG_SUBSHELL
+  local debug_subshell=${DEBUG_SUBSHELL:-false}
+  if [[ "$1" == "--debug-subshell" ]]; then
+      debug_subshell=true
+      shift
+  fi
 
-    if [[ ${#module_cmd[@]} -eq 0 ]]; then
-        err "No command/function specified"
-        return 1
-    fi
+  local module_cmd=("$@")
 
-    # Export environment variables for sudo
-    export REPO_ROOT LIB_DIR TOOLS_DIR VENVDIR
-    export DRY_RUN="${DRY_RUN:-false}"
-    export QUIET="${QUIET:-false}"
-    export VERBOSE="${VERBOSE:-false}"
+  if [[ -z "$user" ]]; then
+    err "User not specified"
+    return 1
+  fi
 
-    # Capture all shell functions to restore inside sudo
-    local all_functions
-    all_functions="$(declare -f)"
+  if [[ ${#module_cmd[@]} -eq 0 ]]; then
+    err "No command/function specified"
+    return 1
+  fi
 
-    # Run as user
-    sudo -H -u "$user" bash -c '
+  # Export environment variables for sudo
+  export REPO_ROOT LIB_DIR TOOLS_DIR VENVDIR
+  export DRY_RUN="${DRY_RUN:-false}"
+  export QUIET="${QUIET:-false}"
+  export VERBOSE="${VERBOSE:-false}"
+
+  # Source safe-commands first, to guarantee safe_* functions exist
+  [[ -f "$LIB_DIR/helpers/safe-commands.sh" ]] && source "$LIB_DIR/helpers/safe-commands.sh"
+
+  # Capture all shell functions from parent after sourcing safe-commands.sh
+  local all_functions
+  all_functions="$(declare -f)"
+
+  sudo -H -u "$user" \
+    REPO_ROOT="$REPO_ROOT" \
+    LIB_DIR="$LIB_DIR" \
+    TOOLS_DIR="$TOOLS_DIR" \
+    VENVDIR="$VENVDIR" \
+    DRY_RUN="$DRY_RUN" \
+    QUIET="$QUIET" \
+    VERBOSE="$VERBOSE" \
+    bash -c '
       set -euo pipefail
       IFS=$'\''\n\t'\''
 
-      # Restore environment
-      export REPO_ROOT="$REPO_ROOT"
-      export LIB_DIR="$LIB_DIR"
-      export TOOLS_DIR="$TOOLS_DIR"
-      export VENVDIR="$VENVDIR"
-      export PATH="$VENVDIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-      export DRY_RUN="$DRY_RUN"
-      export QUIET="$QUIET"
-      export VERBOSE="$VERBOSE"
+      # Enable debug if requested
+      if [[ "'"$debug_subshell"'" == true ]]; then
+        set -x
+      fi
 
-      # Helper: safely create directories
-      ensure_dir() {
-        local dir="$1"
-        if [[ "$DRY_RUN" == true ]]; then
-          info "[DRY-RUN] safe_mkdir -p $dir"
-        else
-          [[ -d "$dir" ]] || safe_mkdir -p "$dir"
-          info "Ensured directory exists: $dir"
-        fi
-      }
+      #############################################################################
+      # *************************** DEBUG BLOCK START ****************************#
+      if [[ "'"$debug_subshell"'" == true ]]; then
+        echo "===== DEBUG: Starting sudo subshell for user: '"$user"' =====" >&2
+        echo "===== DEBUG: Environment =====" >&2
+        env | sort >&2
+        echo "===============================" >&2
 
-      # Source debug library
-      [[ -f "$LIB_DIR/helpers/debug.sh" ]] && source "$LIB_DIR/helpers/debug.sh"
-      [[ "${DEBUG:-false}" == true ]] && enable_debug "${DEBUG_LEVEL:-0}"
+        for f in "$LIB_DIR/helpers/"*.sh; do
+          [[ -f "$f" ]] && echo "DEBUG: sourcing $f" >&2 && source "$f"
+        done
 
-      # Source helpers and installers
-      for f in "$LIB_DIR/helpers/"*.sh "$LIB_DIR/helpers-extra/"*.sh "$LIB_DIR/installers/"*.sh; do
-        [[ -f "$f" ]] && source "$f"
-      done
+        for f in "$LIB_DIR/helpers-extra/"*.sh; do
+          [[ -f "$f" ]] && echo "DEBUG: sourcing $f" >&2 && source "$f"
+        done
 
-      # Import all functions from calling shell
+        for f in "$LIB_DIR/installers/"*.sh; do
+          [[ -f "$f" ]] && echo "DEBUG: sourcing $f" >&2 && source "$f"
+        done
+
+        echo "DEBUG: BASH_SOURCE=${BASH_SOURCE[0]}, FUNCNAME=${FUNCNAME[0]}" >&2
+        echo "===== DEBUG: DEBUG BLOCK END =====" >&2
+      fi
+      #############################################################################
+
+      # Restore all functions from parent
       '"$all_functions"'
 
-      # Execute the function or command
+      # DRY-RUN mode or actual execution
       if [[ "$DRY_RUN" == true ]]; then
         info "[DRY-RUN] (user: '"$user"') $*"
       else
+        if [[ "$debug_subshell" == true ]]; then
+          echo "===== DEBUG: Executing command/function: $* =====" >&2
+        fi
         "$@"
       fi
-  ' _ "${module_cmd[@]}"
+
+      if [[ "$debug_subshell" == true ]]; then
+        echo "===== DEBUG: Finished sudo subshell for user: '"$user"' =====" >&2
+      fi
+    ' _ "${module_cmd[@]}"
+}
+
+# ----------------------------------------------------------------------
+# Wrapper to run a command as root safely
+# Accepts optional --debug-subshell to enable verbose sudo subshell
+# ----------------------------------------------------------------------
+_root_cmd() {
+  local debug_flag=""
+  if [[ "$1" == "--debug-subshell" ]]; then
+    debug_flag="--debug-subshell"
+    shift
+  fi
+  run_module_as_user root $debug_flag "$@"
+}
+
+# ----------------------------------------------------------------------
+# Wrapper to run a command as current user safely
+# Accepts optional --debug-subshell to enable verbose sudo subshell
+# ----------------------------------------------------------------------
+_cmd() {
+  local debug_flag=""
+  if [[ "$1" == "--debug-subshell" ]]; then
+    debug_flag="--debug-subshell"
+    shift
+  fi
+  run_module_as_user "$USER" $debug_flag "$@"
 }
 
 # ----------------------------------------------------------------------
