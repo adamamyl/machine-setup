@@ -5,7 +5,6 @@ IFS=$'\n\t'
 # ----------------------------------------------------------------------
 # Centralized apt helper respecting DRY_RUN and QUIET
 # ----------------------------------------------------------------------
-
 apt_install() {
   local packages=("$@")
   if [[ "${#packages[@]}" -eq 0 ]]; then
@@ -18,9 +17,9 @@ apt_install() {
     info "[DRY-RUN] apt update" "$QUIET"
   else
     if [[ "$QUIET" == true ]]; then
-      apt update -y -qq
+      _root_cmd "apt update -y -qq"
     else
-      apt update -y
+      _root_cmd "apt update -y"
     fi
   fi
 
@@ -34,9 +33,9 @@ apt_install() {
       else
         info "Installing $pkg..." "$QUIET"
         if [[ "$QUIET" == true ]]; then
-          apt install -y -qq "$pkg"
+          _root_cmd "apt install -y -qq $pkg"
         else
-          apt install -y "$pkg"
+          _root_cmd "apt install -y $pkg"
         fi
       fi
     fi
@@ -44,47 +43,29 @@ apt_install() {
 }
 
 apt_autoremove() {
-  if [[ "${DRY_RUN:-}" ]]; then
+  if [[ "${DRY_RUN:-}" == true ]]; then
     info "[DRY-RUN] apt autoremove -y" "$QUIET"
   else
     if [[ "$QUIET" == true ]]; then
-      apt autoremove -y -qq
+      _root_cmd "apt autoremove -y -qq"
     else
-      apt autoremove -y
+      _root_cmd "apt autoremove -y"
     fi
   fi
 }
 
 # ----------------------------------------------------------------------
-# Ensure an apt repository is added idempotently
-# repo_name   - any short identifier (used for filename in sources.list.d)
-# repo_line   - full "deb ..." line to add
-# gpg_url     - optional, URL to key for signed-by
+# Add/ensure apt repository, idempotent, safe for multiple runs
 # ----------------------------------------------------------------------
 ensure_apt_repo() {
-  local repo_name="$1"
+  local list_file="$1"
   local repo_line="$2"
-  local gpg_url="${3:-}"
 
-  local list_file="/etc/apt/sources.list.d/${repo_name}.list"
-  local key_file="/etc/apt/keyrings/${repo_name}.gpg"
-
-  # Create keyrings dir if GPG key is needed
-  if [[ -n "$gpg_url" ]]; then
-    _root_cmd "mkdir -p /etc/apt/keyrings"
-    if [[ ! -f "$key_file" ]]; then
-      info "Adding GPG key for $repo_name"
-      _root_cmd "curl -fsSL $gpg_url | gpg --dearmor -o $key_file"
-    else
-      info "GPG key already exists for $repo_name"
-    fi
-  fi
-
-  # Add repo line if missing
-  if [[ ! -f "$list_file" || ! $(<"$list_file") == "$repo_line" ]]; then
-    info "Adding apt repository $repo_name"
-    _root_cmd "echo '$repo_line' > $list_file"
+  if [[ ! -f "$list_file" ]] || ! grep -Fxq "$repo_line" "$list_file"; then
+    info "Adding apt repository: $list_file"
+    echo "$repo_line" | _root_cmd "tee '$list_file' >/dev/null"
+    _root_cmd "apt update -qq"
   else
-    ok "Repository $repo_name already present"
+    ok "Apt repository already present in $list_file" "$QUIET"
   fi
 }
