@@ -12,9 +12,13 @@ install_vscode() {
 
   info "Installing VSCode..."
   if [[ ! -f /etc/apt/trusted.gpg.d/microsoft.gpg ]]; then
-    wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor >/etc/apt/trusted.gpg.d/microsoft.gpg
+    wget -qO- https://packages.microsoft.com/keys/microsoft.asc | \
+      _root_cmd "gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg"
   fi
-  add-apt-repository -y "deb [arch=amd64] https://packages.microsoft.com/repos/code stable main" >/dev/null 2>&1
-  apt update -qq
+  
+  # Add Microsoft repo for VSCode
+  ensure_apt_repo "/etc/apt/sources.list.d/vscode.list" \
+    "deb [arch=amd64] https://packages.microsoft.com/repos/code stable main"
+
   apt_install code
 }

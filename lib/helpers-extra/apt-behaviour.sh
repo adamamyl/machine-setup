@@ -17,9 +17,9 @@ apt_install() {
     info "[DRY-RUN] apt update" "$QUIET"
   else
     if [[ "$QUIET" == true ]]; then
-      apt update -y -qq
+      _root_cmd "apt update -y -qq"
     else
-      apt update -y
+      _root_cmd "apt update -y"
     fi
   fi
 
@@ -33,9 +33,9 @@ apt_install() {
       else
         info "Installing $pkg..." "$QUIET"
         if [[ "$QUIET" == true ]]; then
-          apt install -y -qq "$pkg"
+          _root_cmd "apt install -y -qq $pkg"
         else
-          apt install -y "$pkg"
+          _root_cmd "apt install -y $pkg"
         fi
       fi
     fi
@@ -43,13 +43,29 @@ apt_install() {
 }
 
 apt_autoremove() {
-  if [[ "${DRY_RUN:-}" ]]; then
+  if [[ "${DRY_RUN:-}" == true ]]; then
     info "[DRY-RUN] apt autoremove -y" "$QUIET"
   else
     if [[ "$QUIET" == true ]]; then
-      apt autoremove -y -qq
+      _root_cmd "apt autoremove -y -qq"
     else
-      apt autoremove -y
+      _root_cmd "apt autoremove -y"
     fi
+  fi
+}
+
+# ----------------------------------------------------------------------
+# Add/ensure apt repository, idempotent, safe for multiple runs
+# ----------------------------------------------------------------------
+ensure_apt_repo() {
+  local list_file="$1"
+  local repo_line="$2"
+
+  if [[ ! -f "$list_file" ]] || ! grep -Fxq "$repo_line" "$list_file"; then
+    info "Adding apt repository: $list_file"
+    echo "$repo_line" | _root_cmd "tee '$list_file' >/dev/null"
+    _root_cmd "apt update -qq"
+  else
+    ok "Apt repository already present in $list_file" "$QUIET"
   fi
 }
