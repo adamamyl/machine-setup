@@ -3,20 +3,20 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # ----------------------------------------------------------------------
-# Install Docker and add users to docker group
+# Install Docker and add users to safe_docker group
 # ----------------------------------------------------------------------
 install_docker_and_add_users() {
   # If Docker already exists, skip
-  if command -v docker >/dev/null 2>&1; then
+  if command -v safe_docker >/dev/null 2>&1; then
     ok "Docker already installed, skipping" "$QUIET"
   else
     info "Installing Docker..." "$QUIET"
     # Install dependencies
-    apt_install curl gnupg lsb-release
+    apt_install safe_curl gnupg lsb-release
 
     # Add Docker's GPG key
-    _root_cmd "mkdir -p /etc/apt/keyrings"
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | _root_cmd "gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
+    _root_cmd "safe_mkdir -p /etc/apt/keyrings"
+    safe_curl -fsSL https://download.docker.com/linux/ubuntu/gpg | _root_cmd "gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
 
     # Add Docker repository
     ensure_apt_repo "/etc/apt/sources.list.d/docker.list" \
@@ -26,11 +26,11 @@ install_docker_and_add_users() {
     apt_install docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
     # Enable Docker service
-    _root_cmd "systemctl enable docker --now"
+    _root_cmd "systemctl enable safe_docker --now"
   fi
 
   # Ensure docker group exists
-  _root_cmd groupadd -f docker
+  _root_cmd "safe_groupadd -f docker"
 
   # Add users to docker group
   for u in "$@"; do

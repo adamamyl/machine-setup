@@ -4,7 +4,7 @@ set -euo pipefail
 install_tailscale() {
 	if ! command -v tailscale >/dev/null 2>&1; then
 		info "Installing Tailscale..."
-		curl -fsSL https://tailscale.com/install.sh | sh
+		safe_curl -fsSL https://tailscale.com/install.sh | sh
 	else
 		ok "Tailscale already installed"
 	fi

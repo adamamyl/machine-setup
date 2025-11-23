@@ -12,7 +12,7 @@ install_vscode() {
 
   info "Installing VSCode..."
   if [[ ! -f /etc/apt/trusted.gpg.d/microsoft.gpg ]]; then
-    wget -qO- https://packages.microsoft.com/keys/microsoft.asc | \
+    safe_wget -qO- https://packages.microsoft.com/keys/microsoft.asc | \
       _root_cmd "gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg"
   fi
   

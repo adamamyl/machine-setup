@@ -18,7 +18,7 @@ for repo_id in "${!REPO_LISTS[@]}"; do
   for f in /etc/apt/sources.list.d/*"$repo_id"*.list; do
     [[ "$f" == "$canonical" ]] && continue
     echo "Removing duplicate repo file: $f"
-    rm -f "$f"
+    safe_rm -f "$f"
   done
 done
 
@@ -29,7 +29,7 @@ for repo_id in "${!REPO_LISTS[@]}"; do
     echo "Deduplicating lines in $canonical"
     tmp="$(mktemp)"
     awk '!seen[$0]++' "$canonical" > "$tmp"
-    mv "$tmp" "$canonical"
+    safe_mv "$tmp" "$canonical"
   fi
 done
 
@@ -39,7 +39,7 @@ for key in /etc/apt/keyrings/*.gpg /etc/apt/keyrings/*.gpg.old; do
   base=$(basename "$key")
   if [[ "$base" =~ \.old$ ]]; then
     echo "Removing stale key: $key"
-    rm -f "$key"
+    safe_rm -f "$key"
   fi
 done
 

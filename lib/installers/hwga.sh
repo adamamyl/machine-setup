@@ -42,7 +42,7 @@ clone_repo() {
 
 setup_hwga() {
   info "Starting HWGA setup..." "$QUIET"
-  _root_cmd groupadd -f docker
+  _root_cmd safe_groupadd -f docker
 
   for repo_name in "${!HWGA_REPOS[@]}"; do
     IFS=':' read -r user dest_dir installer <<< "${HWGA_REPOS[$repo_name]}"
@@ -53,10 +53,10 @@ setup_hwga() {
     users_to_groups_if_needed "$user" "${groups[@]}"
 
     # Ensure base dir
-    _root_cmd "mkdir -p $ROOTSRC_CHECKOUT"
-    _root_cmd "chgrp docker $ROOTSRC_CHECKOUT"
-    _root_cmd "chmod g+w $ROOTSRC_CHECKOUT"
-    _root_cmd "chmod -s $ROOTSRC_CHECKOUT"
+    _root_cmd "safe_mkdir -p $ROOTSRC_CHECKOUT"
+    _root_cmd "safe_chgrp docker $ROOTSRC_CHECKOUT"
+    _root_cmd "safe_chmod g+w $ROOTSRC_CHECKOUT"
+    _root_cmd "safe_chmod -s $ROOTSRC_CHECKOUT"
 
     ssh_dir=$(create_if_needed_ssh_dir "$user")
     create_if_needed_ssh_key "$user" "$ssh_dir" "$repo_name"
