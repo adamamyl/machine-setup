@@ -12,18 +12,11 @@ IFS=$'\n\t'
 # Usage: ensure_dir "/path/to/dir"
 ensure_dir() {
   local dir="$1"
-
   if [[ -z "$dir" ]]; then
     err "ensure_dir called with empty path"
     return 1
   fi
-
-  # Avoid unnecessary mkdir if it already exists
-  if [[ -d "$dir" ]]; then
-    info "Ensured directory exists: $dir"
-    return 0
-  fi
-
+  [[ -d "$dir" ]] && { info "Ensured directory exists: $dir"; return 0; }
   if [[ "$DRY_RUN" == true ]]; then
     info "[DRY-RUN] mkdir -p $dir"
     return 0
@@ -31,7 +24,6 @@ ensure_dir() {
 
   # Use the safe mkdir wrapper (automatically logs, checks, DRY_RUN aware)
   safe_mkdir -p "$dir"
-
   info "Ensured directory exists: $dir"
 }
 
@@ -41,64 +33,31 @@ with_dir() {
   local dir="$1"
   shift
   local cmd=("$@")
-
-  if [[ -z "$dir" ]]; then
-    err "with_dir called with empty directory path"
-    return 1
-  fi
-
-  # Ensure directory exists (safe)
+  [[ -z "$dir" ]] && { err "with_dir called with empty directory path"; return 1; }
   ensure_dir "$dir" || return $?
-
-  # No command? Just ensure the directory exists and exit successfully.
-  if [[ ${#cmd[@]} -eq 0 ]]; then
-    info "Directory ensured: $dir (no command executed)"
-    return 0
-  fi
-
-  # DRY-RUN mode: log what *would* be run
+  [[ ${#cmd[@]} -eq 0 ]] && { info "Directory ensured: $dir (no command executed)"; return 0; }
   if [[ "$DRY_RUN" == true ]]; then
     info "[DRY-RUN] (cd $dir && ${cmd[*]})"
     return 0
   fi
-
-  # Execute inside directory in a subshell so caller’s PWD is not altered
-  (
-    cd "$dir" || {
-      err "Failed to cd into: $dir"
-      exit 1
-    }
-
-    "${cmd[@]}"
-  )
+  ( cd "$dir" || { err "Failed to cd into: $dir"; exit 1; }; "${cmd[@]}" )
 }
- 
-# Provides "safe_" wrappers for system commands to add logging, 
-# DRY_RUN support, and path checks.
 
-# ------------------------
-# Directory & Path Safety Helpers
-# ------------------------
 ensure_path_exists() {
   local path="$1"
-  if [[ ! -e "$path" ]]; then
-    mkdir -p "$path"
-    info "Created missing path: $path"
-  fi
+  [[ ! -e "$path" ]] && { mkdir -p "$path"; info "Created missing path: $path"; }
 }
 
 ensure_dir_writable() {
   local dir="$1"
-  if [[ ! -w "$dir" ]]; then
-    warn "Directory not writable: $dir"
-    return 1
-  fi
+  [[ ! -w "$dir" ]] && { warn "Directory not writable: $dir"; return 1; }
 }
 
-# ------------------------
+# ===============================
 # Special Handling Commands
-# ------------------------
+# ===============================
 
+# mkdir, chown, chmod already have custom handling
 # Usage: safe_mkdir [-p] "/path/to/dir"
 safe_mkdir() {
   if [[ "$DRY_RUN" == true ]]; then
@@ -137,10 +96,9 @@ safe_chmod() {
 alias chmod='safe_chmod'
 
 # ------------------------
-# Simple commands that don't need special flag handling
+# Simple commands (no path/flags handling)
 # ------------------------
 simple_commands=(touch date ln pwd sleep whoami echo)
-
 for cmd in "${simple_commands[@]}"; do
   eval "
     safe_$cmd() {
@@ -156,7 +114,38 @@ for cmd in "${simple_commands[@]}"; do
 done
 
 # ------------------------
-# Aliases helper
+# Additional SAFE_CMDS needing generic wrappers
 # ------------------------
-# Now any call to the original command will go through the safe wrapper.
-# Example: mkdir -> safe_mkdir, touch -> safe_touch, etc.
+# Commands: rm, rmdir, cp, mv, curl, wget, tar, unzip, git, docker, systemctl, groupadd, useradd, passwd
+
+# Path or file aware commands
+file_commands=(rm rmdir cp mv)
+for cmd in "${file_commands[@]}"; do
+  eval "
+    safe_$cmd() {
+      if [[ \"\$DRY_RUN\" == true ]]; then
+        info \"[DRY-RUN] $cmd \$*\"
+      else
+        $cmd \"\$@\"
+        info \"Executed $cmd: \$*\"
+      fi
+    }
+    alias $cmd='safe_$cmd'
+  "
+done
+
+# Network / system / other commands
+other_commands=(curl wget tar unzip git docker systemctl groupadd useradd passwd)
+for cmd in "${other_commands[@]}"; do
+  eval "
+    safe_$cmd() {
+      if [[ \"\$DRY_RUN\" == true ]]; then
+        info \"[DRY-RUN] $cmd \$*\"
+      else
+        $cmd \"\$@\"
+        info \"Executed $cmd: \$*\"
+      fi
+    }
+    alias $cmd='safe_$cmd'
+  "
+done
