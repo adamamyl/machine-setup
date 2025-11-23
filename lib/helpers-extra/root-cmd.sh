@@ -15,8 +15,6 @@ set -euo pipefail
 #   _root_cmd "usermod -aG docker no2id || true"
 # ----------------------------------------------------------------------
 _root_cmd() {
-  local cmd="$*"
-
   # Dry run handling
   if [[ "${DRY_RUN:-false}" == "true" ]]; then
     if [[ "${QUIET:-false}" != "true" ]]; then
@@ -27,13 +25,16 @@ _root_cmd() {
 
   # Actually run the command
   if [[ "$(id -u)" -eq 0 ]]; then
-    # Already root
-    bash -c "$cmd"
+     if [[ "${QUIET:-false}" != "true" ]]; then
+      echo "Running as root: $*"
+    fi
+    # Use array to preserve arguments safely
+    bash -c 'set -- "$@"; "$@"' _ "$@"
   else
     # Elevate
     if [[ "${QUIET:-false}" != "true" ]]; then
-      echo "Running as root: $cmd"
+      echo "Running as root: $*"
     fi
-    sudo bash -c "$cmd"
+    sudo bash -c 'set -- "$@"; "$@"' _ "$@"
   fi
 }

@@ -10,10 +10,10 @@ install_update_all_packages() {
   local repo_dir="$base_dir/update-all-the-packages"
   local install_script="$repo_dir/install-unattended-upgrades"
 
-  _cmd "mkdir -p $base_dir"
-  _cmd "chgrp docker $base_dir || true"
-  _cmd "chmod g+w $base_dir"
-  _cmd "chmod -s $base_dir"
+  _root_cmd "mkdir -p $base_dir"
+  _root_cmd "chgrp docker $base_dir || true"
+  _root_cmd "chmod g+w $base_dir"
+  _root_cmd "chmod -s $base_dir"
 
   if [[ ! -d "$repo_dir" ]]; then
     info "Cloning update-all-the-packages repository"

@@ -7,10 +7,10 @@ IFS=$'\n\t'
 # ----------------------------------------------------------------------
 install_linux_repos() {
   local base_dir="/usr/local/src"
-  _cmd "mkdir -p $base_dir"
-  _cmd "chgrp docker $base_dir || true"
-  _cmd "chmod g+w $base_dir"
-  _cmd "chmod -s $base_dir"
+  _root_cmd "mkdir -p $base_dir"
+  _root_cmd "chgrp docker $base_dir || true"
+  _root_cmd "chmod g+w $base_dir"
+  _root_cmd "chmod -s $base_dir"
 
   # Repos and their installer scripts
   declare -A repos=(
@@ -31,16 +31,16 @@ install_linux_repos() {
     clone_or_update_repo "$repo_url" "$dest_dir"
 
     # Fix permissions
-    _cmd "chown -R root:root $dest_dir"
-    _cmd "chmod -R g+w $dest_dir"
-    _cmd "chmod -s $dest_dir"
+    _root_cmd "chown -R root:root $dest_dir"
+    _root_cmd "chmod -R g+w $dest_dir"
+    _root_cmd "chmod -s $dest_dir"
 
     # Full path to installer
     local install_path="$dest_dir/$installer"
     if [[ -f "$install_path" && -x "$install_path" ]]; then
       info "Running $installer for $repo_name..." "$QUIET"
       # Run inside the repo directory, return to previous dir
-      _cmd "pushd '$dest_dir' >/dev/null && './$installer' && popd >/dev/null"
+      _root_cmd "pushd '$dest_dir' >/dev/null && './$installer' && popd >/dev/null"
     else
       warn "Installer $install_path missing or not executable, skipping" "$QUIET"
     fi
