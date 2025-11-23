@@ -194,8 +194,7 @@ run_module_as_user() {
     local func="$1"
     shift
 
-    # -E -u ; preserves exported functions and env variables.
-    sudo -E -u "$user" bash -c "
+    sudo -H -u "$user" bash -c "
         set -euo pipefail
         IFS=$'\n\t'
 
@@ -209,6 +208,12 @@ run_module_as_user() {
         export VERBOSE=\"$VERBOSE\"
         export USER_FLAGS='${USER_FLAGS[*]}'
 
+        # Source helpers & installers **first**
+        for f in '\$LIB_DIR/helpers/'*.sh '\$LIB_DIR/helpers-extra/'*.sh '\$LIB_DIR/installers/'*.sh; do
+          [[ -f \"\$f\" ]] && source \"\$f\"
+        done
+
+        # Now call the requested module
         $func \"\${USER_FLAGS[*]}\"
     "
 }
