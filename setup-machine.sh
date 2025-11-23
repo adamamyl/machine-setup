@@ -194,29 +194,29 @@ run_module_as_user() {
     local func="$1"
     shift
 
-    sudo -H -u "$user" bash -c "
+    sudo -H -u "$user" bash -c '
         set -euo pipefail
-        IFS=$'\n\t'
+        IFS=$'\''\n\t'\''
+        export REPO_ROOT="'"$REPO_ROOT"'"
+        export LIB_DIR="'"$LIB_DIR"'"
+        export TOOLS_DIR="'"$TOOLS_DIR"'"
+        export VENVDIR="'"$VENVDIR"'"
+        export PATH="'"$VENVDIR"'/bin:$PATH"
+        export DRY_RUN="'"$DRY_RUN"'"
+        export QUIET="'"$QUIET"'"
+        export VERBOSE="'"$VERBOSE"'"
+        export USER_FLAGS="'"${USER_FLAGS[*]}"'"
 
-        export REPO_ROOT='$REPO_ROOT'
-        export LIB_DIR='$LIB_DIR'
-        export TOOLS_DIR='$TOOLS_DIR'
-        export VENVDIR='$VENVDIR'
-        export PATH=\"$VENVDIR/bin:\$PATH\"
-        export DRY_RUN=\"$DRY_RUN\"
-        export QUIET=\"$QUIET\"
-        export VERBOSE=\"$VERBOSE\"
-        export USER_FLAGS='${USER_FLAGS[*]}'
-
-        # Source helpers & installers **first**
-        for f in '\$LIB_DIR/helpers/'*.sh '\$LIB_DIR/helpers-extra/'*.sh '\$LIB_DIR/installers/'*.sh; do
-          [[ -f \"\$f\" ]] && source \"\$f\"
+        # Source all helpers and installers first
+        for f in "$LIB_DIR/helpers/"*.sh "$LIB_DIR/helpers-extra/"*.sh "$LIB_DIR/installers/"*.sh; do
+            [[ -f "$f" ]] && source "$f"
         done
 
-        # Now call the requested module
-        $func \"\${USER_FLAGS[*]}\"
-    "
+        # Call the function passed as $1, with remaining args
+        "$@"
+    ' _ "$func" "$@"
 }
+
 
 # ----------------------------------------------------------------------
 # Run selected modules (order matters)
