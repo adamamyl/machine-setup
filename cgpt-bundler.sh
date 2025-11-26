@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 shopt -s globstar
-safe_rm -f ~/bundle.txt
+rm -f ~/bundle.txt
 
 for f in **/*.sh; do
   echo "===== START FILE: $f =====" >> ~/bundle.txt
