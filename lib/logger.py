@@ -18,6 +18,7 @@ EMOJI_INFO = "ℹ️"
 EMOJI_WARN = "⚠️"
 EMOJI_ERR = "❌"
 EMOJI_DEBUG = "🔎"
+EMOJI_PACKAGE = "📦"
 
 SUCCESS = 25
 logging.addLevelName(SUCCESS, 'SUCCESS')
@@ -71,5 +72,37 @@ def configure_logger(quiet: bool = False, verbose: bool = False) -> logging.Logg
     setattr(logger, 'success', success)
     
     return logger
+
+def log_module_start(module_name: str, exec_obj: Any) -> None:
+    """Logs a formatted banner line to indicate the start of a major module execution."""
+    if exec_obj.quiet:
+        return
+        
+    # Define a clean banner line using bold text and blue/cyan colors
+    # Example: === 📦 STARTING MODULE: PACKAGES 📦 ===
+    
+    BANNER_CHAR = "="
+    WIDTH = 70 # Increased width for better visibility
+    INNER_WIDTH = 60
+    
+    # 1. Define the core message: 📦 STARTING MODULE: [NAME] 📦
+    # The message should use the padding calculated against the INNER_WIDTH.
+    msg_content = f" {EMOJI_PACKAGE} STARTING MODULE: {module_name.upper()} {EMOJI_PACKAGE} "
+    
+    # Use standard string center method for centering the visible text.
+    # Python's str.center() handles Unicode width correctly in modern terminals.
+    # We pad the content string to the INNER_WIDTH.
+    centered_content = msg_content.center(INNER_WIDTH, ' ')
+    
+    # 2. Construct the outer and inner lines
+    outer_line = BANNER_CHAR * WIDTH
+    
+    # The inner line uses 5 BANNER_CHARs of padding on each side (70 - 60 = 10, / 2 = 5)
+    inner_line = f"{BANNER_CHAR * 5}{centered_content}{BANNER_CHAR * 5}"
+    
+    # Print the result
+    print("\n" + outer_line)
+    print(f"{BOLD}{CYAN}{inner_line}{RESET}")
+    print(outer_line + "\n")
 
 log = logging.getLogger("MachineSetup")

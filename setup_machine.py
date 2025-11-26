@@ -3,6 +3,8 @@ import argparse
 import os
 import sys
 from typing import List, Dict, Any, Tuple
+from lib.executor import Executor, EXEC, run_function_as_user
+from lib.logger import configure_logger, log, SUCCESS, log_module_start
 import subprocess
 
 # Set up the internal module search path for relative imports
@@ -172,46 +174,55 @@ def main():
 
     # 7. Execute Modules in Order
     if tasks["tailscale"]:
+        log_module_start("TAILSCALE", EXEC)
         tailscale.install_tailscale(EXEC)
         tailscale.ensure_tailscale_strict(EXEC)
 
     if tasks["packages"]:
+        log_module_start("PACKAGES", EXEC)
         packages.install_packages(EXEC)
         packages.install_update_all_packages(EXEC)
 
     if tasks["docker"]:
+        log_module_start("DOCKER", EXEC)
         module_docker.install_docker_and_add_users(EXEC, DEFAULT_VM_USER)
 
     if tasks["cloud_init"]:
+        log_module_start("CLOUD-INIT REPOS", EXEC)
         module_no2id.install_system_repos(EXEC)
         
     if tasks["sudoers"]:
+        log_module_start("SUDOERS CONFIG", EXEC)
         user_mgmt.setup_sudoers_staff(EXEC)
 
     # Run pseudohome as 'adam' user
     if tasks["pseudohome"]:
+        log_module_start("PSEUDOHOME SETUP (USER: ADAM)", EXEC)
         run_function_as_user("adam", "setup_pseudohome", VENVDIR)
 
     # Run NO2ID (HWGA) as 'no2id-docker' user
     if tasks["no2id"]:
+        log_module_start("NO2ID SETUP (USER: NO2ID-DOCKER)", EXEC)
         run_function_as_user("no2id-docker", "setup_no2id", VENVDIR)
 
     if args.do_vm:
+        log_module_start(f"VIRT MACHINE SETUP (USER: {args.vm_user})", EXEC)
         virtmachine.setup_virtmachine(EXEC, args.vm_user)
         
     # 8. Ubuntu Desktop Extras
     from lib.platform_utils import is_ubuntu_desktop
     from lib.installer_utils import vscode, tweaks
     if is_ubuntu_desktop():
+        log_module_start("DESKTOP EXTRAS (VSCODE, TWEAKS)", EXEC)
         vscode.install_vscode(EXEC)
         tweaks.install_gnome_tweaks(EXEC)
 
     # 9. Final Cleanup
     if not args.no_autoremove:
+        log_module_start("FINAL CLEANUP", EXEC)
         apt_autoremove(EXEC)
         
     log.success("All requested tasks completed.")
-
 
 if __name__ == "__main__":
     main()
