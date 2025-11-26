@@ -13,10 +13,6 @@ from lib.constants import *
 from lib.logger import configure_logger, log, SUCCESS
 from lib.executor import Executor, EXEC, run_function_as_user
 
-# Global default user (used for Docker setup)
-DEFAULT_VM_USER: str = "adam"
-
-
 def require_root() -> None:
     """Check if the script is run as root (UID 0)."""
     if os.geteuid() != 0:

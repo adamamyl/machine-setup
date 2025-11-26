@@ -11,6 +11,7 @@ TOOLS_DIR: str = os.path.join(REPO_ROOT, "tools")
 
 # --- System Config ---
 ROOT_SRC_CHECKOUT: str = "/usr/local/src"
+DEFAULT_VM_USER: str = "adam"
 
 # --- Repo/Installer Definitions ---
 
