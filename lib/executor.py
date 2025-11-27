@@ -11,10 +11,11 @@ class Executor:
     Handles DRY_RUN, SUDO elevation, logging, and error checking.
     """
 
-    def __init__(self, dry_run: bool = False, quiet: bool = False, verbose: bool = False):
+    def __init__(self, dry_run: bool = False, quiet: bool = False, verbose: bool = False, force: bool = False):
         self.dry_run = dry_run
         self.quiet = quiet
         self.verbose = verbose
+        self.force = force # Propagated for idempotency overrides
 
     def _should_sudo(self, force_sudo: bool) -> bool:
         """Determines if 'sudo' needs to be prepended to the command."""
@@ -27,9 +28,13 @@ class Executor:
             force_sudo: bool = False, 
             cwd: Optional[str] = None, 
             user: Optional[str] = None,
-            env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
+            env: Optional[Dict[str, str]] = None,
+            check: bool = True,
+            # --- FIX: ADDED interactive flag ---
+            interactive: bool = False) -> subprocess.CompletedProcess:
+            # ----------------------------------
         """
-        Executes a shell command.
+        Executes a shell command. If interactive=True, it allows direct terminal I/O (no pipe capture).
         """
         
         if isinstance(command, str):
@@ -40,6 +45,8 @@ class Executor:
             log_cmd = " ".join(command)
 
         if user:
+            # Note: We are running the command as root, but providing user context via sudo -u 
+            # (although in the recursive call, the 'user' is handled by the recursive script's logic)
             if os.geteuid() != 0:
                 log_cmd = f"sudo -H -u {user} {log_cmd}"
                 cmd_list = ['sudo', '-H', '-u', user] + cmd_list
@@ -50,11 +57,29 @@ class Executor:
             log_cmd = f"(root) {log_cmd}"
             cmd_list = ['sudo'] + cmd_list
         
+        # --- 3. Dry Run Handling ---
         if self.dry_run:
-            log.info(f"[DRY-RUN] {log_cmd}")
+            if not self.quiet:
+                log.info(f"[DRY-RUN] {log_cmd}")
             return subprocess.CompletedProcess(args=cmd_list, returncode=0, stdout=b"", stderr=b"")
 
-        log.info(f"Executing: {log_cmd}")
+        # --- 4. I/O Stream Determination ---
+        if interactive:
+            # Inherit parent's stdin/stdout/stderr for direct terminal interaction (fixes deadlock)
+            stdout_target = None
+            stderr_target = None
+            stdin_target = None
+            if not self.quiet:
+                log.info(f"Executing INTERACTIVELY: {log_cmd}")
+        else:
+            # Use pipes for standard, non-interactive execution (logging/capture)
+            stdout_target = subprocess.PIPE
+            stderr_target = subprocess.PIPE
+            stdin_target = subprocess.DEVNULL
+            if not self.quiet:
+                log.info(f"Executing: {log_cmd}")
+
+        # --- 5. Actual Execution ---
         
         full_env = os.environ.copy()
         if env:
@@ -64,19 +89,30 @@ class Executor:
             result = subprocess.run(
                 cmd_list,
                 cwd=cwd,
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                check=check,
+                stdin=stdin_target,
+                stdout=stdout_target,
+                stderr=stderr_target,
                 env=full_env,
                 universal_newlines=True
             )
-            log.debug(f"Command Output:\n{result.stdout}\n{result.stderr}")
-            log.success(f"Executed: {log_cmd}")
+            
+            # Logging success/debug output only if not running interactively 
+            # (since interactive output goes directly to terminal)
+            if not interactive:
+                if self.verbose:
+                    log.debug(f"Command Output:\n{result.stdout}\n{result.stderr}")
+                if not self.quiet:
+                    log.success(f"Executed: {log_cmd}")
+            
             return result
         except subprocess.CalledProcessError as e:
-            log.error(f"Command failed with exit code {e.returncode}: {log_cmd}")
-            log.error(f"STDOUT:\n{e.stdout}")
-            log.error(f"STDERR:\n{e.stderr}")
+            # This block only executes if 'check=True' AND the command failed.
+            # Output is already logged by the caller if 'interactive' is false.
+            if not interactive:
+                log.error(f"Command failed with exit code {e.returncode}: {log_cmd}")
+                log.error(f"STDOUT:\n{e.stdout}")
+                log.error(f"STDERR:\n{e.stderr}")
             raise
         except FileNotFoundError:
             log.critical(f"Command not found: {cmd_list[0]}")
@@ -91,7 +127,9 @@ def run_function_as_user(executor: Executor,
                          *func_args: str) -> subprocess.CompletedProcess:
     """
     Executes a specific Python function (by name) from the main script as another user
-    by recursively calling the setup script with internal arguments.
+    by recursively calling the setup script.
+    
+    NOTE: This call is always interactive to support the deploy key workflow.
     """
     
     cmd_list = [
@@ -102,13 +140,18 @@ def run_function_as_user(executor: Executor,
     ]
     cmd_list.extend(func_args)
     
+    # Propagate flags for the recursive script execution
     if executor.dry_run:
         cmd_list.append("--dry-run")
     if executor.quiet:
         cmd_list.append("--quiet")
     if executor.verbose:
         cmd_list.append("--verbose")
+    if executor.force:
+        cmd_list.append("--force")
     
     log.info(f"Delegating execution to user '{user}' for function: {function_name}")
 
-    return executor.run(cmd_list, user=user)
+    # FIX: Run non-interactively (no user=user) but set interactive=True 
+    # to allow the sub-process to communicate with the terminal.
+    return executor.run(cmd_list, check=True, interactive=True)

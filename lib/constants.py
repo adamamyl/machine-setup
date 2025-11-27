@@ -1,5 +1,6 @@
 import os
 from typing import Dict, List
+import shutil
 
 # --- Global Configuration Paths ---
 VENVDIR: str = "/opt/setup-venv"
@@ -12,6 +13,11 @@ TOOLS_DIR: str = os.path.join(REPO_ROOT, "tools")
 # --- System Config ---
 ROOT_SRC_CHECKOUT: str = "/usr/local/src"
 DEFAULT_VM_USER: str = "adam"
+
+# --- Binary Paths ---
+# Find the absolute path for git, ensuring portability.
+GIT_BIN_PATH: str = shutil.which('git') or '/usr/bin/git' 
+# We add a fallback path just in case the check fails, though the orchestrator should ensure git is installed.
 
 # --- SSH Key Mappings ---
 # Maps local Linux user (key) to GitHub account (value) for authorized_keys download.
