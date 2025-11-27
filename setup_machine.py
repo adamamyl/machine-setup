@@ -10,8 +10,12 @@ sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 # Import core utilities
 from lib.constants import *
-from lib.logger import configure_logger, log, SUCCESS
+from lib.logger import configure_logger, log, SUCCESS, log_module_start
 from lib.executor import Executor, EXEC, run_function_as_user
+
+# Global default VM user (used for Docker setup and VM module)
+DEFAULT_VM_USER: str = "adam"
+
 
 def require_root() -> None:
     """Check if the script is run as root (UID 0)."""
@@ -19,17 +23,6 @@ def require_root() -> None:
         log.critical("The orchestrator must be run as root. Please use 'sudo'.")
         sys.exit(1)
     log.info("Running as root.")
-
-
-def check_venv() -> None:
-    """Checks if the script is running inside the specified virtual environment."""
-    current_python = sys.executable
-    if VENVDIR not in current_python:
-        log.critical("Script is NOT running inside the required virtual environment.")
-        log.critical(f"Please run the setup script from the VENV located at: {VENVDIR}")
-        log.critical(f"Activate it first: source {VENVDIR}/bin/activate")
-        sys.exit(1)
-    log.info(f"Running inside VENV: {VENVDIR}")
 
 
 def parse_args() -> Tuple[argparse.Namespace, List[str]]:
@@ -40,6 +33,7 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     )
 
     # --- Internal Command Group (Hidden from main help) ---
+    # Used when 'sudo -u user' recursively calls this script
     group_internal = parser.add_argument_group("Internal Commands (Do not use directly)")
     group_internal.add_argument("--run-cmd", type=str, 
                                 help=argparse.SUPPRESS)
@@ -59,6 +53,12 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     # --- Module Options ---
     group_modules = parser.add_argument_group("Module Options")
     group_modules.add_argument("--all", action="store_true", help="Run all tasks.")
+    
+    # CORE INFRASTRUCTURE (Explicitly selectable)
+    group_modules.add_argument("--root-ssh-keys", action="store_true", dest="do_root_ssh_keys",
+                               help="Install SSH keys from GitHub for the root user.")
+    
+    # SYSTEM/USER SETUP
     group_modules.add_argument("--packages", action="store_true", dest="do_packages",
                                help="Install standard packages and update-all-the-packages.")
     group_modules.add_argument("--sudoers", action="store_true", dest="do_sudoers",
@@ -69,6 +69,8 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
                                help="Install Docker and add users to the docker group.")
     group_modules.add_argument("--cloud-init", action="store_true", dest="do_cloud_init",
                                help="Install system-level repos (post-cloud-init, etc.).")
+    
+    # PRIVATE REPOS (Requires interactive key setup)
     group_modules.add_argument("--hwga", "--no2id", action="store_true", dest="do_no2id",
                                help="Setup 'no2id-docker' user and private NO2ID (HWGA) repositories.")
     group_modules.add_argument("--pseudohome", action="store_true", dest="do_pseudohome",
@@ -103,14 +105,15 @@ def main():
     EXEC.dry_run = args.dry_run
     EXEC.quiet = args.quiet
     EXEC.verbose = args.verbose
+    EXEC.force = args.force # Propagate force flag for idempotency overrides
     
-    # 3. Import Modules
-    from lib.installer_utils import module_docker, module_no2id, tailscale, user_mgmt, packages, virtmachine, python_mgmt
+    # 3. Import Modules (required here for internal command lookup and execution)
+    from lib.installer_utils import module_docker, module_no2id, module_pseudohome, tailscale, user_mgmt, packages, virtmachine, vscode, tweaks
     from lib.installer_utils.apt_tools import apt_autoremove
 
-    log.info(f"Configuration: Dry Run={args.dry_run}, Quiet={args.quiet}, Verbose={args.verbose}")
+    log.info(f"Configuration: Dry Run={args.dry_run}, Quiet={args.quiet}, Verbose={args.verbose}, Force={args.force}")
 
-    # 4. Internal Command Execution (Used when sudo -u <user> calls this script)
+    # 4. Internal Command Execution (Handles recursive calls from sudo -u)
     if args.run_cmd:
         log.debug(f"Executing internal command: {args.run_cmd} with args: {args.run_args}")
         try:
@@ -136,78 +139,85 @@ def main():
             log.error(f"Internal command failed: {args.run_cmd}. Error: {e}")
             sys.exit(1)
             
-    # 5. Mandatory Pre-Flight Setup (Orchestration Phase)
-    log.info("Running pre-flight checks and setup...")
-    user_mgmt.install_root_ssh_keys(EXEC)
-    
-    # Python VENV setup must run first to ensure python3 is available for modules
-    python_mgmt.install_python_venv(EXEC)
-    python_mgmt.update_readme_with_venv_instructions()
-    
-    # --- VENV Check (AFTER VENV CREATION) ---
-    check_venv()
-    
-    # Propagate VENVDIR globally 
-    os.environ['VENVDIR'] = VENVDIR
-    os.environ['PATH'] = f"{VENVDIR}/bin:{os.environ['PATH']}"
-    
-    # 6. Determine Task List
+    # 5. Determine Task List
     tasks = {
-        "tailscale": args.do_tailscale,
+        "root_ssh_keys": args.do_root_ssh_keys,
         "packages": args.do_packages,
+        "sudoers": args.do_sudoers,
+        "tailscale": args.do_tailscale,
         "docker": args.do_docker,
         "cloud_init": args.do_cloud_init,
-        "sudoers": args.do_sudoers,
-        "pseudohome": args.do_pseudohome,
         "no2id": args.do_no2id,
+        "pseudohome": args.do_pseudohome,
     }
     
     if args.all:
         for key in tasks:
             tasks[key] = True
 
-    if not any(tasks.values()) and not args.do_vm and not args.all:
+    if not any(tasks.values()) and not args.do_vm:
         log.warning("No modules selected. Use --help for options.")
         return
+        
+    # --- Environment Setup (Unconditional but non-module, relies on external VENV/uv) ---
+    # We rely on the user having run 'uv run' or activated the VENV for the orchestrator itself.
+    # VENVDIR is passed to user-modules (sudo -u) via run_function_as_user.
+    os.environ['VENVDIR'] = VENVDIR
+    os.environ['PATH'] = f"{VENVDIR}/bin:{os.environ.get('PATH', '')}"
 
-    # 7. Execute Modules in Order
-    if tasks["tailscale"]:
-        tailscale.install_tailscale(EXEC)
-        tailscale.ensure_tailscale_strict(EXEC)
 
+    # 6. Execute Modules in Order
+    
+    if tasks["root_ssh_keys"]:
+        log_module_start("ROOT SSH KEYS", EXEC)
+        user_mgmt.install_root_ssh_keys(EXEC)
+        
     if tasks["packages"]:
+        log_module_start("PACKAGES", EXEC)
         packages.install_packages(EXEC)
         packages.install_update_all_packages(EXEC)
 
     if tasks["docker"]:
+        log_module_start("DOCKER", EXEC)
         module_docker.install_docker_and_add_users(EXEC, DEFAULT_VM_USER)
 
     if tasks["cloud_init"]:
+        log_module_start("CLOUD-INIT REPOS", EXEC)
         module_no2id.install_system_repos(EXEC)
         
     if tasks["sudoers"]:
+        log_module_start("SUDOERS CONFIG", EXEC)
         user_mgmt.setup_sudoers_staff(EXEC)
+        
+    if tasks["tailscale"]:
+        log_module_start("TAILSCALE", EXEC)
+        tailscale.install_tailscale(EXEC)
+        tailscale.ensure_tailscale_strict(EXEC)
 
-    # Run pseudohome as 'adam' user
+    # Private User Repositories
     if tasks["pseudohome"]:
+        log_module_start("PSEUDOHOME SETUP (USER: ADAM)", EXEC)
         run_function_as_user("adam", "setup_pseudohome", VENVDIR)
 
-    # Run NO2ID (HWGA) as 'no2id-docker' user
     if tasks["no2id"]:
+        log_module_start("NO2ID SETUP (USER: NO2ID-DOCKER)", EXEC)
         run_function_as_user("no2id-docker", "setup_no2id", VENVDIR)
 
+    # 7. VM Setup
     if args.do_vm:
+        log_module_start(f"VIRT MACHINE SETUP (USER: {args.vm_user})", EXEC)
         virtmachine.setup_virtmachine(EXEC, args.vm_user)
         
     # 8. Ubuntu Desktop Extras
     from lib.platform_utils import is_ubuntu_desktop
-    from lib.installer_utils import vscode, tweaks
     if is_ubuntu_desktop():
+        log_module_start("DESKTOP EXTRAS (VSCODE, TWEAKS)", EXEC)
         vscode.install_vscode(EXEC)
         tweaks.install_gnome_tweaks(EXEC)
 
     # 9. Final Cleanup
     if not args.no_autoremove:
+        log_module_start("FINAL CLEANUP (APT AUTOREMOVE)", EXEC)
         apt_autoremove(EXEC)
         
     log.success("All requested tasks completed.")
