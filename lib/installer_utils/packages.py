@@ -1,7 +1,8 @@
 import os
+from ..executor import Executor
+from ..logger import log # <-- ADD THIS IMPORT
 from .apt_tools import apt_install
 from ..constants import STANDARD_PACKAGES, SYSTEM_REPOS, ROOT_SRC_CHECKOUT
-from ..executor import Executor
 from .git_tools import clone_or_update_repo
 
 def install_packages(exec_obj: Executor) -> None:
