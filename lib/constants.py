@@ -13,6 +13,16 @@ TOOLS_DIR: str = os.path.join(REPO_ROOT, "tools")
 ROOT_SRC_CHECKOUT: str = "/usr/local/src"
 DEFAULT_VM_USER: str = "adam"
 
+# --- SSH Key Mappings ---
+# Maps local Linux user (key) to GitHub account (value) for authorized_keys download.
+# Note: Multiple GitHub accounts can be listed for one local user, separated by spaces.
+USER_GITHUB_KEY_MAP: Dict[str, str] = {
+    "root": "adamamyl",
+    "adam": "adamamyl",
+    # Add more users here:
+    # "john": "johnsmith123" 
+}
+
 # --- Repo/Installer Definitions ---
 
 # System Repos
