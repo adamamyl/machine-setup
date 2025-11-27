@@ -82,6 +82,8 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
                           help="Run UTM/QEMU virtual machine setup (fstab, guests, etc.).")
     group_vm.add_argument("--vm-user", default=DEFAULT_VM_USER, dest="vm_user",
                           help=f"Specify local user for UTM mount (default: {DEFAULT_VM_USER}).")
+    group_vm.add_argument("--vm-force", action="store_true", dest="do_vm_force",
+                          help="Bypass VM detection and force execution of VM setup steps.")
 
     return parser.parse_known_args()
 
@@ -197,16 +199,17 @@ def main():
     # Private User Repositories
     if tasks["pseudohome"]:
         log_module_start("PSEUDOHOME SETUP (USER: ADAM)", EXEC)
-        run_function_as_user("adam", "setup_pseudohome", VENVDIR)
+        run_function_as_user(EXEC, "adam", "setup_pseudohome")
 
     if tasks["no2id"]:
         log_module_start("NO2ID SETUP (USER: NO2ID-DOCKER)", EXEC)
-        run_function_as_user("no2id-docker", "setup_no2id", VENVDIR)
+        run_function_as_user(EXEC, "no2id-docker", "setup_no2id")
 
     # 7. VM Setup
     if args.do_vm:
         log_module_start(f"VIRT MACHINE SETUP (USER: {args.vm_user})", EXEC)
-        virtmachine.setup_virtmachine(EXEC, args.vm_user)
+        # Pass the specific flag state directly:
+        virtmachine.setup_virtmachine(EXEC, args.vm_user, force_detection=args.do_vm_force)
         
     # 8. Ubuntu Desktop Extras
     from lib.platform_utils import is_ubuntu_desktop

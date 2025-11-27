@@ -77,30 +77,30 @@ def configure_logger(quiet: bool = False, verbose: bool = False) -> logging.Logg
 def log_module_start(module_name: str, exec_obj: Any) -> None:
     """
     Logs a formatted banner line to indicate the start of a major module execution.
-    Only runs if not in quiet mode.
+    Avoids complex character width calculation to prevent overflow errors.
     """
     if exec_obj.quiet:
         return
         
     BANNER_CHAR = "="
     WIDTH = 70 
-    INNER_WIDTH = 60 
     
     # 1. Define the core message: 📦 STARTING MODULE: [NAME] 📦
-    msg_content = f" {EMOJI_PACKAGE} STARTING MODULE: {module_name.upper()} {EMOJI_PACKAGE} "
+    msg = f" {EMOJI_PACKAGE} STARTING MODULE: {module_name.upper()} {EMOJI_PACKAGE} "
     
-    # Pad the content string to the INNER_WIDTH.
-    centered_content = msg_content.center(INNER_WIDTH, ' ')
+    # 2. Use the message itself and surround it with a fixed, visually appealing padding.
+    fixed_inner_padding = "=="
     
-    # 2. Construct the outer and inner lines
+    # Construct the inner line with symmetric padding
+    inner_line = f"{fixed_inner_padding}{msg}{fixed_inner_padding}"
+    
+    # Fill the remaining space with BANNER_CHARs for the header and footer
     outer_line = BANNER_CHAR * WIDTH
-    
-    # The inner line uses 5 BANNER_CHARs of padding on each side (70 - 60 = 10, / 2 = 5)
-    inner_line = f"{BANNER_CHAR * 5}{centered_content}{BANNER_CHAR * 5}"
 
     # Print the result
     print("\n" + outer_line)
-    print(f"{BOLD}{CYAN}{inner_line}{RESET}")
+    # Print the inner line centered within the total width
+    print(f"{BOLD}{CYAN}{inner_line.center(WIDTH, BANNER_CHAR)}{RESET}")
     print(outer_line + "\n")
 
 
