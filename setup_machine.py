@@ -73,7 +73,7 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     # PRIVATE REPOS (Requires interactive key setup)
     group_modules.add_argument("--hwga", "--no2id", action="store_true", dest="do_no2id",
                                help="Setup 'no2id-docker' user and private NO2ID (HWGA) repositories.")
-    group_modules.add_argument("--pseudohome", action="store_true", dest="do_pseudohome",
+    group_modules.add_argument("--pseudohome", "--psuedohome", action="store_true", dest="do_pseudohome",
                                help="Setup 'adam' user and pseudohome repository (private git.amyl.org.uk).")
     
     # --- Virtual Machine Options ---
