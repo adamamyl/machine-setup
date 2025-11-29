@@ -30,9 +30,10 @@ class Executor:
             user: Optional[str] = None,
             env: Optional[Dict[str, str]] = None,
             check: bool = True,
-            # --- FIX: ADDED interactive flag ---
+            # --- FIX: ADDED quiet override flag ---
+            run_quiet: bool = False, 
+            # --------------------------------------
             interactive: bool = False) -> subprocess.CompletedProcess:
-            # ----------------------------------
         """
         Executes a shell command. If interactive=True, it allows direct terminal I/O (no pipe capture).
         """
@@ -57,9 +58,12 @@ class Executor:
             log_cmd = f"(root) {log_cmd}"
             cmd_list = ['sudo'] + cmd_list
         
+        # Determine if we should suppress logging for this run
+        suppress_logging = self.quiet or run_quiet 
+
         # --- 3. Dry Run Handling ---
         if self.dry_run:
-            if not self.quiet:
+            if not suppress_logging:
                 log.info(f"[DRY-RUN] {log_cmd}")
             return subprocess.CompletedProcess(args=cmd_list, returncode=0, stdout=b"", stderr=b"")
 
@@ -69,14 +73,14 @@ class Executor:
             stdout_target = None
             stderr_target = None
             stdin_target = None
-            if not self.quiet:
+            if not suppress_logging:
                 log.info(f"Executing INTERACTIVELY: {log_cmd}")
         else:
             # Use pipes for standard, non-interactive execution (logging/capture)
             stdout_target = subprocess.PIPE
             stderr_target = subprocess.PIPE
             stdin_target = subprocess.DEVNULL
-            if not self.quiet:
+            if not suppress_logging:
                 log.info(f"Executing: {log_cmd}")
 
         # --- 5. Actual Execution ---
@@ -102,7 +106,7 @@ class Executor:
             if not interactive:
                 if self.verbose:
                     log.debug(f"Command Output:\n{result.stdout}\n{result.stderr}")
-                if not self.quiet:
+                if not suppress_logging:
                     log.success(f"Executed: {log_cmd}")
             
             return result

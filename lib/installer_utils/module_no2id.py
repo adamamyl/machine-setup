@@ -6,8 +6,8 @@ from ..executor import Executor
 from ..logger import log
 from ..constants import HWGA_REPOS, ROOT_SRC_CHECKOUT, SYSTEM_REPOS
 from .user_mgmt import users_to_groups_if_needed, create_if_needed_ssh_dir
-from .git_tools import clone_or_update_repo, set_homedir_perms_recursively, set_ssh_perms
-from .repo_utils import _display_key_and_url_for_repo, _create_if_needed_ssh_key # NEW, centralized imports
+from .git_tools import set_homedir_perms_recursively, set_ssh_perms, clone_or_update_private_repo_with_key_check # MODIFIED IMPORT
+from .repo_utils import _create_if_needed_ssh_key # Only need key creation/perms check here
 
 
 def setup_no2id(exec_obj: Executor) -> None:
@@ -38,34 +38,33 @@ def setup_no2id(exec_obj: Executor) -> None:
             groups.append("staff")
         users_to_groups_if_needed(exec_obj, user, groups)
 
-        # 2. SSH key setup (Idempotent check and generation)
+        # 2. SSH key setup (Idempotent check and generation + Permissions enforcement)
         ssh_dir = create_if_needed_ssh_dir(exec_obj, user)
         
-        # Capture if the key was NEWLY created (True/False)
+        # This function now guarantees the key exists and has strict permissions
         key_is_new = _create_if_needed_ssh_key(exec_obj, user, ssh_dir, repo_name)
         
-        # 3. Interactive Deploy Key Step
-        if key_is_new: # ONLY DISPLAY AND WAIT IF THE KEY IS NEW
-            _display_key_and_url_for_repo(exec_obj, ssh_dir, repo_name, repo_url)
-        else:
-            log.info("Skipping interactive deploy key setup (Key already existed).")
+        # Ensure the .ssh directory itself has strict permissions before use
+        set_ssh_perms(exec_obj, user, ssh_dir)
         
-        # 4. Clone/Update Repo
+        # 3. Clone/Update Repo (Handles interactive key prompt and retry on failure)
         ssh_key_path = os.path.join(ssh_dir, repo_name)
-        clone_or_update_repo(
+        
+        clone_or_update_private_repo_with_key_check(
             exec_obj, 
             repo_url, 
             dest_dir, 
             ssh_key_path=ssh_key_path,
+            repo_name=repo_name,
             extra_git_flags=extra_flags,
             user=user # Execute as target user
         )
         
-        # 5. Fix permissions
+        # 4. Fix permissions
         set_homedir_perms_recursively(exec_obj, user, dest_dir)
-        set_ssh_perms(exec_obj, user, ssh_dir)
+        # set_ssh_perms(exec_obj, user, ssh_dir) # No longer needed here, done before clone
 
-        # 6. Run installer script (as the user)
+        # 5. Run installer script (as the user)
         installer_path = os.path.join(dest_dir, installer)
         
         # --- NEW LOGIC: Skip installer requiring arguments ---
@@ -85,6 +84,7 @@ def setup_no2id(exec_obj: Executor) -> None:
 
 
 def install_system_repos(exec_obj: Executor) -> None:
+# ... (rest of install_system_repos function remains the same, as these are public repos) ...
     """Installs and runs installers for system-level GitHub repos (from SYSTEM_REPOS)."""
     log.info("Starting installation of system-level repositories...")
 
@@ -100,7 +100,8 @@ def install_system_repos(exec_obj: Executor) -> None:
         repo_url = config['url']
         dest_dir = os.path.join(base_dir, repo_name)
 
-        # Note: These are public/system repos, user=None (runs as root)
+        # Note: These are public/system repos, user=None (runs as root), so use low-level clone
+        from .git_tools import clone_or_update_repo # Use low-level clone
         clone_or_update_repo(exec_obj, repo_url, dest_dir)
 
         # Fix permissions (root ownership)

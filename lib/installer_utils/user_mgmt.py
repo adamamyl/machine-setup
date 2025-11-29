@@ -132,11 +132,12 @@ def install_mapped_ssh_keys(exec_obj: Executor, user: str) -> None:
         # Use curl to download content to memory
         try:
             # We use check=False to continue fetching even if one account URL fails (e.g., 404)
-            result = exec_obj.run(f"curl -fsSL \"{url}\"", check=False, quiet=True)
-            if result.returncode == 0:
-                 all_downloaded_keys += result.stdout + "\n"
+            # We are relying on -f (fail silently) and -s (silent) from curl
+            result = exec_obj.run(f"curl -fsSL \"{url}\"", check=False, run_quiet=True)
+            if result.returncode == 0 and result.stdout.strip():
+                all_downloaded_keys += result.stdout.strip() + "\n"
             else:
-                 log.warning(f"Failed to fetch keys from {url} (Exit code {result.returncode}).")
+                log.warning(f"Failed to fetch keys from {url} (Exit code {result.returncode} or no keys found).")
         except Exception as e:
             log.error(f"Critical error during curl for {url}. Skipping this account.")
             log.debug(f"Curl error: {e}")

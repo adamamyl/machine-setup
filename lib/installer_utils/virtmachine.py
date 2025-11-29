@@ -26,7 +26,7 @@ def _get_current_bindfs_ids(exec_obj: Executor, mount_point: str = "/mnt/utm") -
     # We use stat -c to get raw UID/GID: %u %g
     try:
         # Running 'stat' requires root if ownership is non-root
-        result = exec_obj.run(f"stat -c '%u %g' {mount_point}", quiet=True)
+        result = exec_obj.run(f"stat -c '%u %g' {mount_point}", run_quiet=True)
         uid, gid = result.stdout.strip().split()
         log.info(f"Detected UID/GID mismatch: {uid}:{gid}")
         return uid, gid
