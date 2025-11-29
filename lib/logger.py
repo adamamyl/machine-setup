@@ -6,7 +6,7 @@ from typing import Any
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
 YELLOW = "\033[0;33m"
-BLUE = "\033[0;34m"
+BLUE = "\033[0;94m"
 MAGENTA = "\033[0;35m"
 CYAN = "\033[0;36m"
 RESET = "\033[0m"
@@ -29,7 +29,7 @@ class CustomFormatter(logging.Formatter):
     
     FORMATS = {
         logging.DEBUG: f"{MAGENTA}{EMOJI_DEBUG} DEBUG: {RESET}%(message)s",
-        logging.INFO: f"{BOLD}{BLUE}{EMOJI_INFO} {RESET}{BOLD}{BLUE}%(message)s{RESET}",
+        logging.INFO: f"{BOLD}{CYAN}{EMOJI_INFO} {RESET}{BOLD}{CYAN}%(message)s{RESET}",
         SUCCESS: f"{BOLD}{GREEN}{EMOJI_OK} {RESET}{BOLD}{GREEN}%(message)s{RESET}",
         logging.WARNING: f"{BOLD}{YELLOW}{EMOJI_WARN} {RESET}{BOLD}{YELLOW}%(message)s{RESET}",
         logging.ERROR: f"{BOLD}{RED}{EMOJI_ERR} {RESET}{BOLD}{RED}%(message)s{RESET}",
