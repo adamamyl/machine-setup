@@ -2,7 +2,7 @@
 shopt -s globstar
 rm -f ~/bundle.txt
 
-for f in **/*.sh; do
+for f in **/**/*.py; do
   echo "===== START FILE: $f =====" >> ~/bundle.txt
   cat "$f" >> ~/bundle.txt
   echo -e "\n===== END FILE: $f =====\n" >> ~/bundle.txt
