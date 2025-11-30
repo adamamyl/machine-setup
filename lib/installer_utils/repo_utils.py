@@ -2,10 +2,10 @@ import os
 import sys
 import platform
 import re
-from typing import Optional
+from typing import Optional, List
 from ..executor import Executor
 from ..logger import log
-from ..constants import HWGA_REPOS
+from ..constants import HWGA_REPOS, TOOLS_DIR
 
 
 def _convert_ssh_to_deploy_url(ssh_url: str) -> str:
@@ -72,7 +72,6 @@ def _create_if_needed_ssh_key(exec_obj: Executor, user: str, ssh_dir: str, key_n
         exec_obj.run(f"chmod 600 {key_file}", force_sudo=True)
         
         # Ensure public key is readable (e.g., 644)
-        # We must use 'find' or 'ls' later to handle known_hosts/other files
         exec_obj.run(f"chmod 644 {key_file_pub}", force_sudo=True)
         
         log.success(f"Permissions for {key_name} keys enforced.")
@@ -82,7 +81,7 @@ def _create_if_needed_ssh_key(exec_obj: Executor, user: str, ssh_dir: str, key_n
 
 
 def _display_key_and_url_for_repo(exec_obj: Executor, ssh_dir: str, repo_name: str, repo_url: str) -> None:
-    # (The function body which displays the key and waits for input remains the same)
+    # ... (function body remains the same) ...
     
     deploy_url = _convert_ssh_to_deploy_url(repo_url)
     
@@ -107,3 +106,45 @@ def _display_key_and_url_for_repo(exec_obj: Executor, ssh_dir: str, repo_name: s
         raise
         
     input("Press Enter once the deploy key has been successfully added to the Git host...")
+
+# --- NEW DOTENV SYNC UTILITY ---
+def _dotenv_sync_if_needed(exec_obj: Executor, repo_name: str, user: str, repo_dir: str) -> None:
+    """
+    Checks if a repository is configured for environment file synchronization and runs the script.
+    """
+    config = HWGA_REPOS.get(repo_name, {})
+    
+    if not config.get("dotenv_sync"): # <-- CHECKING RENAMED FLAG
+        return
+
+    # Assuming the script name is 'env-sync.py'
+    script_name = "env-sync.py" 
+    script_path = os.path.join(TOOLS_DIR, script_name)
+    
+    if not os.path.exists(script_path):
+        log.critical(f"Env sync script not found at {script_path}. Cannot generate .env.")
+        raise FileNotFoundError(f"Missing {script_path}")
+
+    output_file = os.path.join(repo_dir, ".env")
+
+    # If the .env file already exists, we skip generation unless forced.
+    if os.path.exists(output_file) and not exec_obj.force:
+        log.success(f".env file already exists in {repo_dir}. Skipping synchronization.")
+        return
+
+    log.info(f"Generating .env file in {repo_dir} for user {user}...")
+    
+    # We call the external Python script directly
+    cmd_list = [
+        "python3",
+        script_path,
+        "--env", "prod" # Defaulting to 'prod' or a sensible default for servers
+    ]
+    
+    # Propagate dry-run status to the external script
+    if exec_obj.dry_run:
+        cmd_list.append("--dry-run")
+    
+    # Run the script as the target user, specifying the repo dir as the current working directory.
+    exec_obj.run(cmd_list, user=user, cwd=repo_dir, check=True, interactive=True)
+    log.success(f"Generated and secured {repo_dir}/.env file.")
