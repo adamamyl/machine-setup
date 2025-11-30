@@ -3,23 +3,53 @@ import platform
 import os
 from typing import List
 import subprocess
+
 from ..executor import Executor
 from ..logger import log
 from ..constants import DOCKER_DEPS, DOCKER_PKGS
 from .apt_tools import apt_install, ensure_apt_repo
 from .user_mgmt import add_user_to_group
 
+# OLD_DOCKER_PKGS is retained but not strictly needed, as we use a shell query for removal
 OLD_DOCKER_PKGS: List[str] = [
     "docker", "docker-engine", "docker.io", "containerd", "runc"
 ]
 
 def _remove_old_docker(exec_obj: Executor) -> None:
-    """Removes old or conflicting Docker packages."""
+    """
+    Removes old, conflicting, or manually installed Docker packages 
+    using the comprehensive selection method.
+    """
     log.info("Checking for and removing old/conflicting Docker packages...")
     
-    cmd = f"apt purge -y {' '.join(OLD_DOCKER_PKGS)} || true"
-    exec_obj.run(cmd, force_sudo=True)
+    # 1. Shell command to query all potentially conflicting packages
+    # The list is comprehensive to catch common old or conflicting installs.
+    query_cmd = "dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc | cut -f1"
     
+    try:
+        # Execute the query command as root to get the list of packages to remove
+        # run_quiet=True suppresses the execution logging here
+        result = exec_obj.run(query_cmd, force_sudo=True, check=False, run_quiet=True)
+        packages_to_remove = result.stdout.strip().split()
+        
+        if not packages_to_remove:
+            log.success("No old Docker or conflicting packages found to remove.")
+            return
+
+        # 2. Construct the removal command
+        remove_cmd = ["apt", "remove", "-y"] + packages_to_remove
+        
+        log.warning(f"Removing the following old/conflicting packages: {', '.join(packages_to_remove)}")
+        
+        # Execute the removal command
+        # We allow check=False in case some packages are listed by dpkg but apt fails to find them, though unlikely here.
+        exec_obj.run(remove_cmd, force_sudo=True, check=True)
+        log.success("Old Docker packages successfully removed.")
+
+    except Exception as e:
+        log.warning(f"Failed to execute package removal query or removal. Continuing installation.")
+        log.debug(f"Removal error: {e}")
+        # We don't halt here, as the subsequent installation step will fail if necessary.
 
 def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None:
     """Installs Docker packages, starts the service, and adds users to the 'docker' group."""
@@ -31,6 +61,7 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
         
         log.info("Installing Docker from official repository...")
         
+        # DOCKER_DEPS now includes ca-certificates and lsb-release
         apt_install(exec_obj, DOCKER_DEPS)
 
         keyrings_dir = "/etc/apt/keyrings"
@@ -46,8 +77,21 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
         else:
             log.info("Docker GPG key already exists.")
 
+        # 1. Get Distribution Codename robustly (Fix for Exit Code 100/No installation candidate)
+        try:
+            # Execute lsb_release -cs and capture output
+            result = exec_obj.run("lsb_release -cs", check=True, run_quiet=True) 
+            codename = result.stdout.strip()
+            log.info(f"Detected distribution codename: {codename}")
+        except Exception as e:
+            log.critical("Failed to determine Linux distribution codename (lsb_release -cs failed). Aborting Docker setup.")
+            log.debug(f"lsb_release error: {e}")
+            raise RuntimeError("Cannot proceed without distribution codename.") # Halt execution
+            
         arch = platform.machine()
-        repo_line = f"deb [arch={arch} signed-by={docker_gpg_path}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+        
+        # 2. Interpolate the Python variable 'codename' into the repository line
+        repo_line = f"deb [arch={arch} signed-by={docker_gpg_path}] https://download.docker.com/linux/ubuntu {codename} stable"
         ensure_apt_repo(exec_obj, list_file, repo_line)
 
         apt_install(exec_obj, DOCKER_PKGS)
