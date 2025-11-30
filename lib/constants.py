@@ -70,6 +70,14 @@ STANDARD_PACKAGES: List[str] = [
 # Packages required for VM setup
 VM_PACKAGES: List[str] = ["spice-vdagent", "qemu-guest-agent", "bindfs"]
 
-# Packages required for Docker
-DOCKER_DEPS: List[str] = ["curl", "gnupg", "lsb-release"]
-DOCKER_PKGS: List[str] = ["docker-ce", "docker-ce-cli", "containerd.io", "docker-compose-plugin"]
+# Packages required for Docker (Added ca-certificates as per Docker script)
+DOCKER_DEPS: List[str] = ["curl", "gnupg", "lsb-release", "ca-certificates"]
+
+# Full modern Docker suite (v23.0+ packages)
+DOCKER_PKGS: List[str] = [
+    "docker-ce", 
+    "docker-ce-cli", 
+    "containerd.io", 
+    "docker-compose-plugin",
+    "docker-buildx-plugin",
+]
