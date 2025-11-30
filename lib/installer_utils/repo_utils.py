@@ -137,7 +137,7 @@ def _dotenv_sync_if_needed(exec_obj: Executor, repo_name: str, user: str, repo_d
     cmd_list = [
         "python3",
         script_path,
-        "--env", "prod" # Defaulting to 'prod' or a sensible default for servers
+        # "--env", "prod" # Defaulting to 'prod' or a sensible default for servers
     ]
     
     # Propagate dry-run status to the external script
