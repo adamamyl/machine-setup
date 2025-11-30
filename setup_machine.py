@@ -137,16 +137,7 @@ def main():
                 "setup_pseudohome": (module_pseudohome, 'setup_pseudohome'),
             }
             
-            # HACK: Direct shell execution delegation for run_function_as_user -> run_shell_cmd
-            if args.run_cmd == "run_shell_cmd":
-                # We expect the full command string to be in args.run_args[0]
-                if not args.run_args:
-                    log.critical("Internal command 'run_shell_cmd' missing argument.")
-                    sys.exit(1)
-                log.debug(f"Executing delegated shell command: {args.run_args[0]}")
-                EXEC.run(args.run_args[0], check=True, interactive=True)
-                
-            elif args.run_cmd in module_map:
+            if args.run_cmd in module_map:
                 module, func_name = module_map[args.run_cmd]
                 target_func = getattr(module, func_name)
                 # Execute the function with the global executor instance
