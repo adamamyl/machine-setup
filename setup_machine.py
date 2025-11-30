@@ -76,6 +76,10 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     group_modules.add_argument("--pseudohome", "--psuedohome", action="store_true", dest="do_pseudohome",
                                help="Setup 'adam' user and pseudohome repository (private git.amyl.org.uk).")
     
+    # --- Fake-LE Module Flag ---
+    group_modules.add_argument("--fake-le", action="store_true", dest="do_fake_le",
+                               help="Run Docker Compose, Fake-LE cert generation, and orchestration.")
+    
     # --- Virtual Machine Options ---
     group_vm = parser.add_argument_group("Virtual Machine Options")
     group_vm.add_argument("--vm", "--virtmachine", action="store_true", dest="do_vm",
@@ -84,6 +88,14 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
                           help=f"Specify local user for UTM mount (default: {DEFAULT_VM_USER}).")
     group_vm.add_argument("--vm-force", action="store_true", dest="do_vm_force",
                           help="Bypass VM detection and force execution of VM setup steps.")
+
+    # --- fake_le (self-signed tls certs for testing) Options ---
+    group_fake_le_flags = parser.add_argument_group("Fake-LE Orchestration Options")
+    group_fake_le_flags.add_argument("--fake-le-debug", action="store_true", dest="fake_le_debug", help="Pass --debug to the fake-le installer script.")
+    group_fake_le_flags.add_argument("--fake-le-dry-run", action="store_true", dest="fake_le_dry_run", help="Pass --dry-run to the fake-le installer script.")
+    group_fake_le_flags.add_argument("--fake-le-force", action="store_true", dest="fake_le_force", help="Pass --force to the fake-le installer script.")
+    group_fake_le_flags.add_argument("--fake-le-ca-install", action="store_true", dest="do_fake_le_ca_install", 
+                                     help="Run the installer script to add the CA to the system trust store.")
 
     return parser.parse_known_args()
 
@@ -110,7 +122,7 @@ def main():
     EXEC.force = args.force # Propagate force flag for idempotency overrides
     
     # 3. Import Modules (required here for internal command lookup and execution)
-    from lib.installer_utils import module_docker, module_no2id, module_pseudohome, tailscale, user_mgmt, packages, virtmachine, vscode, tweaks
+    from lib.installer_utils import module_docker, module_no2id, module_pseudohome, tailscale, user_mgmt, packages, virtmachine, vscode, tweaks, module_fake_le
     from lib.installer_utils.apt_tools import apt_autoremove
 
     log.info(f"Configuration: Dry Run={args.dry_run}, Quiet={args.quiet}, Verbose={args.verbose}, Force={args.force}")
@@ -119,23 +131,32 @@ def main():
     if args.run_cmd:
         log.debug(f"Executing internal command: {args.run_cmd} with args: {args.run_args}")
         try:
-            target_func = None
+            # Functions that expect the executor object
             module_map = {
                 "setup_no2id": (module_no2id, 'setup_no2id'),
                 "setup_pseudohome": (module_pseudohome, 'setup_pseudohome'),
             }
             
-            if args.run_cmd in module_map:
+            # HACK: Direct shell execution delegation for run_function_as_user -> run_shell_cmd
+            if args.run_cmd == "run_shell_cmd":
+                # We expect the full command string to be in args.run_args[0]
+                if not args.run_args:
+                    log.critical("Internal command 'run_shell_cmd' missing argument.")
+                    sys.exit(1)
+                log.debug(f"Executing delegated shell command: {args.run_args[0]}")
+                EXEC.run(args.run_args[0], check=True, interactive=True)
+                
+            elif args.run_cmd in module_map:
                 module, func_name = module_map[args.run_cmd]
                 target_func = getattr(module, func_name)
+                # Execute the function with the global executor instance
+                target_func(EXEC)
             
-            if target_func is None:
+            else:
                 log.error(f"Internal command function '{args.run_cmd}' not found.")
                 sys.exit(1)
-
-            # Execute the function with the global executor instance, passing VENVDIR argument
-            target_func(EXEC, *args.run_args)
-            sys.exit(0)
+            
+            sys.exit(0) # Exit successfully after internal command runs
             
         except Exception as e:
             log.error(f"Internal command failed: {args.run_cmd}. Error: {e}")
@@ -151,6 +172,7 @@ def main():
         "cloud_init": args.do_cloud_init,
         "no2id": args.do_no2id,
         "pseudohome": args.do_pseudohome,
+        "fake_le": args.do_fake_le,
     }
     
     if args.all:
@@ -166,7 +188,6 @@ def main():
     # VENVDIR is passed to user-modules (sudo -u) via run_function_as_user.
     os.environ['VENVDIR'] = VENVDIR
     os.environ['PATH'] = f"{VENVDIR}/bin:{os.environ.get('PATH', '')}"
-
 
     # 6. Execute Modules in Order
     
@@ -204,6 +225,12 @@ def main():
     if tasks["no2id"]:
         log_module_start("NO2ID SETUP (USER: NO2ID-DOCKER)", EXEC)
         run_function_as_user(EXEC, "no2id-docker", "setup_no2id")
+    
+    # Local CA and TLS certs setup-a-tron
+    if tasks["fake_le"]: 
+        log_module_start("FAKE-LE ORCHESTRATION", EXEC)
+        # Pass the entire 'args' object so the module can read all the new flags
+        module_fake_le.setup_fake_le(EXEC, args)
 
     # 7. VM Setup
     if args.do_vm:

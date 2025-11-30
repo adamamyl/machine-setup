@@ -69,8 +69,7 @@ def setup_no2id(exec_obj: Executor) -> None:
         
         # --- NEW LOGIC: Skip installer requiring arguments ---
         if repo_name == "fake-le" and installer == "fake-le-for-no2id-docker-installer":
-            log.warning("⚠️ Skipping 'fake-le' installer! This script requires manual arguments.")
-            log.warning(f"Please run manually later: sudo -u {user} {installer_path} /path/to/ca.pem [container_name]")
+            log.info(f"Skipping installer {installer} for {repo_name}. This is now handled by the --fake-le module.")
             continue # Skip execution for this specific module
         
         # Execute all other installers
@@ -84,7 +83,6 @@ def setup_no2id(exec_obj: Executor) -> None:
 
 
 def install_system_repos(exec_obj: Executor) -> None:
-# ... (rest of install_system_repos function remains the same, as these are public repos) ...
     """Installs and runs installers for system-level GitHub repos (from SYSTEM_REPOS)."""
     log.info("Starting installation of system-level repositories...")
 
