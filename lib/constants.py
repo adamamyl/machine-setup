@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List
+from typing import Dict, List, Any
 import shutil
 
 # --- Global Configuration Paths ---
@@ -15,6 +15,7 @@ ROOT_SRC_CHECKOUT: str = "/usr/local/src"
 DEFAULT_VM_USER: str = "adam"
 
 # --- Binary Paths ---
+# Find the absolute path for git, ensuring portability.
 GIT_BIN_PATH: str = shutil.which('git') or '/usr/bin/git' 
 
 # --- SSH Key Mappings ---
@@ -28,6 +29,8 @@ USER_GITHUB_KEY_MAP: Dict[str, str] = {
 }
 
 # --- Repo/Installer Definitions ---
+
+# System Repos
 SYSTEM_REPOS: Dict[str, Dict[str, str]] = {
     "post-cloud-init": {
         "url": "https://github.com/adamamyl/post-cloud-init.git",
@@ -39,14 +42,15 @@ SYSTEM_REPOS: Dict[str, Dict[str, str]] = {
     }
 }
 
-# --- NO2ID / Private Repos ---
-HWGA_REPOS: Dict[str, Dict[str, str]] = {
+# NO2ID / Private Repos
+HWGA_REPOS: Dict[str, Dict[str, Any]] = {
     "herewegoagain": {
         "user": "no2id-docker",
         "url": "git@github.com:no2id/herewegoagain.git",
         "dest": f"{ROOT_SRC_CHECKOUT}/herewegoagain",
         "installer": "install",
-        "extra_flags": "--recursive"
+        "extra_flags": "--recursive",
+        "dotenv_sync": True,
     },
     "fake-le": {
         "user": "adam",
