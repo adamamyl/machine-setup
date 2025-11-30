@@ -1,7 +1,7 @@
 import shutil
 import platform
 import os
-from typing import List
+from typing import List, Optional, Union
 import subprocess
 
 from ..executor import Executor
@@ -10,11 +10,6 @@ from ..constants import DOCKER_DEPS, DOCKER_PKGS
 from .apt_tools import apt_install, ensure_apt_repo
 from .user_mgmt import add_user_to_group
 
-# OLD_DOCKER_PKGS is retained but not strictly needed, as we use a shell query for removal
-OLD_DOCKER_PKGS: List[str] = [
-    "docker", "docker-engine", "docker.io", "containerd", "runc"
-]
-
 def _remove_old_docker(exec_obj: Executor) -> None:
     """
     Removes old, conflicting, or manually installed Docker packages 
@@ -22,8 +17,7 @@ def _remove_old_docker(exec_obj: Executor) -> None:
     """
     log.info("Checking for and removing old/conflicting Docker packages...")
     
-    # 1. Shell command to query all potentially conflicting packages
-    # The list is comprehensive to catch common old or conflicting installs.
+    # Comprehensive query command to find packages that need removal
     query_cmd = "dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc | cut -f1"
     
     try:
@@ -52,52 +46,72 @@ def _remove_old_docker(exec_obj: Executor) -> None:
         # We don't halt here, as the subsequent installation step will fail if necessary.
 
 def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None:
-    """Installs Docker packages, starts the service, and adds users to the 'docker' group."""
+    """
+    Installs Docker packages, starts the service, and adds users to the 'docker' group.
+    """
     
     if shutil.which("docker"):
         log.success("Docker binary detected, skipping installation steps.")
+        _verify_docker_installation(exec_obj)
+        
     else:
         _remove_old_docker(exec_obj)
         
         log.info("Installing Docker from official repository...")
         
-        # DOCKER_DEPS now includes ca-certificates and lsb-release
+        # DOCKER_DEPS includes ca-certificates and lsb-release
         apt_install(exec_obj, DOCKER_DEPS)
 
         keyrings_dir = "/etc/apt/keyrings"
-        docker_gpg_path = os.path.join(keyrings_dir, "docker.gpg")
+        docker_gpg_path = os.path.join(keyrings_dir, "docker.asc") # Official script uses docker.asc
         list_file = "/etc/apt/sources.list.d/docker.list"
         
         exec_obj.run(f"mkdir -p {keyrings_dir}", force_sudo=True)
         
         if not os.path.exists(docker_gpg_path):
             log.info("Downloading and adding Docker GPG key.")
+            # Note: We use docker.asc file name for consistency with Docker's script output
             curl_cmd = f"curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o {docker_gpg_path}"
             exec_obj.run(curl_cmd, force_sudo=True)
+            # Ensure proper read permissions for apt
+            exec_obj.run(f"chmod a+r {docker_gpg_path}", force_sudo=True)
         else:
             log.info("Docker GPG key already exists.")
 
-        # 1. Get Distribution Codename robustly (Fix for Exit Code 100/No installation candidate)
+        # 1. Get Distribution Codename robustly
         try:
-            # Execute lsb_release -cs and capture output
             result = exec_obj.run("lsb_release -cs", check=True, run_quiet=True) 
             codename = result.stdout.strip()
             log.info(f"Detected distribution codename: {codename}")
         except Exception as e:
             log.critical("Failed to determine Linux distribution codename (lsb_release -cs failed). Aborting Docker setup.")
             log.debug(f"lsb_release error: {e}")
-            raise RuntimeError("Cannot proceed without distribution codename.") # Halt execution
+            raise RuntimeError("Cannot proceed without distribution codename.")
             
         arch = platform.machine()
         
-        # 2. Interpolate the Python variable 'codename' into the repository line
-        repo_line = f"deb [arch={arch} signed-by={docker_gpg_path}] https://download.docker.com/linux/ubuntu {codename} stable"
+        # --- FIX: Architecture Correction (aarch64 -> arm64) ---
+        # If the detected arch is aarch64, use the APT standard 'arm64' for the repo line.
+        if arch == 'aarch64':
+            display_arch = 'arm64'
+        else:
+            display_arch = arch
+            
+        effective_codename = codename # Trust the detected codename
+
+        # 2. Interpolate the correct codename and arch into the repository line
+        repo_line = f"deb [arch={display_arch} signed-by={docker_gpg_path}] https://download.docker.com/linux/ubuntu {effective_codename} stable"
+        
+        log.info(f"Using APT repository line: {repo_line}")
         ensure_apt_repo(exec_obj, list_file, repo_line)
 
         apt_install(exec_obj, DOCKER_PKGS)
 
         log.info("Enabling Docker service.")
         exec_obj.run("systemctl enable docker --now", force_sudo=True)
+        
+        _verify_docker_installation(exec_obj)
+
 
     exec_obj.run("groupadd -f docker", force_sudo=True)
     for user in users_to_add:
@@ -105,6 +119,40 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
         log.success(f"Added {user} to docker group.")
     
     log.success("Docker installation complete.")
+
+def _verify_docker_installation(exec_obj: Executor) -> None:
+    """
+    Runs a simple Docker command (like 'docker run hello-world') and cleans up the resulting image/container.
+    """
+    log.info("Running post-installation verification test...")
+    
+    # Use the simplest possible test: docker info
+    try:
+        exec_obj.run(["docker", "info"], check=True, force_sudo=True, run_quiet=True)
+        log.success("Docker engine is running and responsive.")
+    except Exception as e:
+        log.critical("Docker verification failed. Docker service may not be running correctly.")
+        log.debug(f"Docker info error: {e}")
+        return
+
+    # Use a basic container test that doesn't rely on remote registries
+    try:
+        log.info("Testing container execution with 'docker run hello-world'...")
+        exec_obj.run(["docker", "run", "hello-world"], check=True, force_sudo=True)
+        log.success("Container test completed successfully.")
+    except Exception as e:
+        log.warning("Container test failed. Connectivity or environment issue detected.")
+        log.debug(f"Container test error: {e}")
+    finally:
+        # Cleanup: Remove the container and image to maintain a clean system state.
+        log.info("Cleaning up test container and image...")
+        
+        # 1. Remove the last created container (the hello-world container)
+        exec_obj.run("docker rm $(docker ps -lq) || true", force_sudo=True, run_quiet=True)
+        # 2. Remove the hello-world image
+        exec_obj.run("docker rmi hello-world || true", force_sudo=True, run_quiet=True)
+        log.success("Test artifacts cleaned up.")
+
 
 def run_docker_compose(exec_obj: Executor, user: str, cwd: str, command: str) -> None:
     """
