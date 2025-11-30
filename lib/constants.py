@@ -15,9 +15,7 @@ ROOT_SRC_CHECKOUT: str = "/usr/local/src"
 DEFAULT_VM_USER: str = "adam"
 
 # --- Binary Paths ---
-# Find the absolute path for git, ensuring portability.
 GIT_BIN_PATH: str = shutil.which('git') or '/usr/bin/git' 
-# We add a fallback path just in case the check fails, though the orchestrator should ensure git is installed.
 
 # --- SSH Key Mappings ---
 # Maps local Linux user (key) to GitHub account (value) for authorized_keys download.
@@ -30,8 +28,6 @@ USER_GITHUB_KEY_MAP: Dict[str, str] = {
 }
 
 # --- Repo/Installer Definitions ---
-
-# System Repos
 SYSTEM_REPOS: Dict[str, Dict[str, str]] = {
     "post-cloud-init": {
         "url": "https://github.com/adamamyl/post-cloud-init.git",
@@ -43,7 +39,7 @@ SYSTEM_REPOS: Dict[str, Dict[str, str]] = {
     }
 }
 
-# NO2ID / Private Repos
+# --- NO2ID / Private Repos ---
 HWGA_REPOS: Dict[str, Dict[str, str]] = {
     "herewegoagain": {
         "user": "no2id-docker",
@@ -70,14 +66,16 @@ STANDARD_PACKAGES: List[str] = [
 # Packages required for VM setup
 VM_PACKAGES: List[str] = ["spice-vdagent", "qemu-guest-agent", "bindfs"]
 
-# Packages required for Docker (Added ca-certificates as per Docker script)
+# Packages required for Docker (Based on Docker install script pre-reqs: ca-certificates curl)
 DOCKER_DEPS: List[str] = ["curl", "gnupg", "lsb-release", "ca-certificates"]
 
-# Full modern Docker suite (v23.0+ packages)
+# Full modern Docker suite (Matching successful installation log)
 DOCKER_PKGS: List[str] = [
     "docker-ce", 
     "docker-ce-cli", 
     "containerd.io", 
     "docker-compose-plugin",
     "docker-buildx-plugin",
+    "docker-ce-rootless-extras",
+    "docker-model-plugin",
 ]
