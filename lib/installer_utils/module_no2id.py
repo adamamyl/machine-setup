@@ -6,7 +6,7 @@ from ..executor import Executor
 from ..logger import log
 from ..constants import HWGA_REPOS, ROOT_SRC_CHECKOUT, SYSTEM_REPOS
 from .user_mgmt import users_to_groups_if_needed, create_if_needed_ssh_dir
-from .git_tools import set_homedir_perms_recursively, set_ssh_perms, clone_or_update_private_repo_with_key_check
+from .git_tools import set_homedir_perms_recursively, set_ssh_perms, clone_or_update_private_repo_with_key_check, _configure_repo_ssh_key
 from .repo_utils import _create_if_needed_ssh_key, _dotenv_sync_if_needed
 
 
@@ -59,6 +59,11 @@ def setup_no2id(exec_obj: Executor) -> None:
             extra_git_flags=extra_flags,
             user=user # Execute as target user
         )
+        
+        # --- NEW STEP: Configure local Git SSH key for subsequent pulls/fetches ---
+        # This resolves the 'Permission denied' error for subsequent 'git pull' operations 
+        # performed by the user inside the repository.
+        _configure_repo_ssh_key(exec_obj, user, dest_dir, ssh_key_path)
         
         # 4. Fix permissions
         set_homedir_perms_recursively(exec_obj, user, dest_dir)
