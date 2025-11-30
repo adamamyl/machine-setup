@@ -148,26 +148,22 @@ def _configure_repo_ssh_key(exec_obj: Executor, user: str, repo_dir: str, key_pa
     Sets the core.sshCommand configuration within the local Git repository.
     This ensures 'git pull' uses the specific deploy key without needing ssh-agent or ~/.ssh/config.
     """
-    log.info(f"Configuring local Git SSH command for {repo_dir}")
+    log.info(f"Configuring Git SSH command for {repo_dir}")
     
     # Git command to set the core.sshCommand locally
     # We use single quotes around the key_path in the ssh_command_value to protect it in the git config file
     ssh_command_value = f"ssh -i '{key_path}' -o IdentitiesOnly=yes"
     
-    # --- NEATER FIX: Use the Executor's cwd parameter and pass command as list ---
-    # Command List: git config --local core.sshCommand <value>
-    cmd_list = [
-        GIT_BIN_PATH, 
-        "config", 
-        "--local", 
-        "core.sshCommand", 
-        ssh_command_value
-    ]
+    # --- FIX: Pass command as a single string and remove --local ---
+    # The original was failing due to complex quoting and `--local` may not be necessary 
+    # when setting a config that applies only to this repo, not the global user config.
+    cmd = f"\"{GIT_BIN_PATH}\" config core.sshCommand '{ssh_command_value}'"
+    # We run the entire command string to ensure proper shell parsing.
     
     try:
         # The Executor prepends 'sudo -H -u user' and handles execution.
         # cwd=repo_dir replaces the need for the fragile 'bash -c "cd..."' wrapper.
-        exec_obj.run(cmd_list, user=user, cwd=repo_dir, check=True) 
+        exec_obj.run(cmd, user=user, cwd=repo_dir, check=True) 
         
         log.success(f"Set core.sshCommand to use {key_path} in {repo_dir}")
     except Exception as e:
