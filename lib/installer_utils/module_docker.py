@@ -2,6 +2,7 @@ import shutil
 import platform
 import os
 from typing import List
+import subprocess
 from ..executor import Executor
 from ..logger import log
 from ..constants import DOCKER_DEPS, DOCKER_PKGS
@@ -60,3 +61,89 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
         log.success(f"Added {user} to docker group.")
     
     log.success("Docker installation complete.")
+
+def run_docker_compose(exec_obj: Executor, user: str, cwd: str, command: str) -> None:
+    """
+    Executes a docker compose command in a specific directory as the specified user, 
+    favoring the modern 'docker compose' syntax.
+    """
+    if not shutil.which("docker"):
+        log.error("Docker not installed. Cannot run docker compose.")
+        raise FileNotFoundError("Docker executable not found.")
+        
+    log.info(f"Executing Docker Compose command '{command}' in {cwd} as user '{user}'...")
+    
+    # 1. Prioritize the modern 'docker compose' syntax.
+    compose_path = shutil.which("docker")
+    if compose_path:
+        # Use 'docker compose' syntax
+        cmd_list = [compose_path, 'compose'] + command.split()
+        log.debug(f"Using modern docker compose syntax: {cmd_list}")
+    else:
+        # 2. Fallback to legacy 'docker-compose' binary path.
+        legacy_path = shutil.which("docker-compose")
+        if legacy_path:
+            cmd_list = [legacy_path] + command.split()
+            log.warning("Falling back to legacy 'docker-compose' binary.")
+        else:
+            log.error("Neither 'docker compose' nor 'docker-compose' binary found.")
+            raise FileNotFoundError("Docker Compose functionality missing.")
+
+    # NOTE: user=user, check=True
+    exec_obj.run(cmd_list, user=user, cwd=cwd, check=True)
+    log.success(f"Docker Compose command '{command}' completed for {user} in {cwd}.")
+    
+def check_docker_volume_exists(exec_obj: Executor, volume_name: str) -> bool:
+    """Checks if a named Docker volume exists."""
+    log.info(f"Checking for existence of Docker volume: {volume_name}")
+    try:
+        # Use 'docker volume ls -q -f name=...' to check existence silently
+        result = exec_obj.run(["docker", "volume", "ls", "-q", "-f", f"name=^{volume_name}$"], check=True, force_sudo=True, run_quiet=True)
+        if result.stdout.strip() == volume_name:
+            log.success(f"Docker volume '{volume_name}' exists.")
+            return True
+        log.warning(f"Docker volume '{volume_name}' not found.")
+        return False
+    except subprocess.CalledProcessError as e:
+        log.error(f"Error checking Docker volumes: {e.stderr}")
+        return False
+
+def are_docker_services_running(exec_obj: Executor, user: str, cwd: str, service_names: List[str]) -> bool:
+    """
+    Checks if a list of specific Docker Compose services are currently in the 'running' state.
+    Requires running as the user that owns the compose stack.
+    """
+    log.info(f"Checking status for services: {', '.join(service_names)} in {cwd}...")
+    
+    try:
+        # We assume the modern 'docker compose' syntax is available
+        compose_path = shutil.which("docker") 
+        if not compose_path:
+            log.error("Docker executable not found for status check.")
+            return False
+
+        # Run command: docker compose ps -a --format "{{.Service}} {{.State}}"
+        cmd_list = [compose_path, 'compose', 'ps', '-a', '--format', '{{.Service}} {{.State}}']
+        
+        result = exec_obj.run(cmd_list, user=user, cwd=cwd, check=True, run_quiet=True)
+        
+        ps_output = result.stdout.lower()
+        
+        all_running = True
+        
+        for service in service_names:
+            # Check for the pattern: "service_name running"
+            if f"{service} running" not in ps_output:
+                log.warning(f"Service '{service}' is NOT running or was not found.")
+                all_running = False
+                break
+            
+        return all_running
+        
+    except subprocess.CalledProcessError as e:
+        log.warning(f"Failed to execute 'docker compose ps'. Stack may not exist.")
+        log.debug(f"PS error: {e.stderr}")
+        return False
+    except Exception as e:
+        log.error(f"Unexpected error during Docker Compose status check: {e}")
+        return False
