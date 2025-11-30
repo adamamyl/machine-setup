@@ -117,12 +117,11 @@ def _dotenv_sync_if_needed(exec_obj: Executor, repo_name: str, user: str, repo_d
     if not config.get("dotenv_sync"): # <-- CHECKING RENAMED FLAG
         return
 
-    # Assuming the script name is 'env-sync.py'
-    script_name = "env-sync.py" 
+    script_name = "env-generator.py" 
     script_path = os.path.join(TOOLS_DIR, script_name)
     
     if not os.path.exists(script_path):
-        log.critical(f"Env sync script not found at {script_path}. Cannot generate .env.")
+        log.critical(f"Env generator script not found at {script_path}. Cannot generate .env.")
         raise FileNotFoundError(f"Missing {script_path}")
 
     output_file = os.path.join(repo_dir, ".env")
