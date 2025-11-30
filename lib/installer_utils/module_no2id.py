@@ -6,8 +6,8 @@ from ..executor import Executor
 from ..logger import log
 from ..constants import HWGA_REPOS, ROOT_SRC_CHECKOUT, SYSTEM_REPOS
 from .user_mgmt import users_to_groups_if_needed, create_if_needed_ssh_dir
-from .git_tools import set_homedir_perms_recursively, set_ssh_perms, clone_or_update_private_repo_with_key_check # MODIFIED IMPORT
-from .repo_utils import _create_if_needed_ssh_key # Only need key creation/perms check here
+from .git_tools import set_homedir_perms_recursively, set_ssh_perms, clone_or_update_private_repo_with_key_check
+from .repo_utils import _create_if_needed_ssh_key, _dotenv_sync_if_needed
 
 
 def setup_no2id(exec_obj: Executor) -> None:
@@ -62,12 +62,14 @@ def setup_no2id(exec_obj: Executor) -> None:
         
         # 4. Fix permissions
         set_homedir_perms_recursively(exec_obj, user, dest_dir)
-        # set_ssh_perms(exec_obj, user, ssh_dir) # No longer needed here, done before clone
+        
+        # --- NEW STEP: Generate .env file if flagged in constants ---
+        _dotenv_sync_if_needed(exec_obj, repo_name, user, dest_dir)
 
         # 5. Run installer script (as the user)
         installer_path = os.path.join(dest_dir, installer)
         
-        # --- NEW LOGIC: Skip installer requiring arguments ---
+        # --- LOGIC: Skip installer requiring arguments ---
         if repo_name == "fake-le" and installer == "fake-le-for-no2id-docker-installer":
             log.info(f"Skipping installer {installer} for {repo_name}. This is now handled by the --fake-le module.")
             continue # Skip execution for this specific module
