@@ -3,8 +3,8 @@ import subprocess
 from typing import Optional, List
 from ..executor import Executor
 from ..logger import log
-from ..constants import GIT_BIN_PATH # Import the dynamically resolved path
-from .repo_utils import _display_key_and_url_for_repo # Import the interactive prompt utility
+from ..constants import GIT_BIN_PATH
+from .repo_utils import _display_key_and_url_for_repo
 import time # For retry sleep
 
 def clone_or_update_repo(exec_obj: Executor, 
@@ -141,6 +141,38 @@ def clone_or_update_private_repo_with_key_check(exec_obj: Executor,
                 
     if not clone_succeeded:
         raise RuntimeError(f"Failed to clone repository {repo_name} after multiple attempts.")
+
+
+def _configure_repo_ssh_key(exec_obj: Executor, user: str, repo_dir: str, key_path: str) -> None:
+    """
+    Sets the core.sshCommand configuration within the local Git repository.
+    This ensures 'git pull' uses the specific deploy key without needing ssh-agent or ~/.ssh/config.
+    """
+    log.info(f"Configuring local Git SSH command for {repo_dir}")
+    
+    # Git command to set the core.sshCommand locally
+    # We use single quotes around the key_path in the ssh_command_value to protect it in the git config file
+    ssh_command_value = f"ssh -i '{key_path}' -o IdentitiesOnly=yes"
+    
+    # --- NEATER FIX: Use the Executor's cwd parameter and pass command as list ---
+    # Command List: git config --local core.sshCommand <value>
+    cmd_list = [
+        GIT_BIN_PATH, 
+        "config", 
+        "--local", 
+        "core.sshCommand", 
+        ssh_command_value
+    ]
+    
+    try:
+        # The Executor prepends 'sudo -H -u user' and handles execution.
+        # cwd=repo_dir replaces the need for the fragile 'bash -c "cd..."' wrapper.
+        exec_obj.run(cmd_list, user=user, cwd=repo_dir, check=True) 
+        
+        log.success(f"Set core.sshCommand to use {key_path} in {repo_dir}")
+    except Exception as e:
+        log.error(f"Failed to set local Git SSH config in {repo_dir}. Manual Git operations may fail.")
+        log.debug(f"Git config error: {e}")
 
 
 def set_homedir_perms_recursively(exec_obj: Executor, user: str, dir_path: str) -> None:
