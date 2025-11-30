@@ -114,14 +114,15 @@ def _dotenv_sync_if_needed(exec_obj: Executor, repo_name: str, user: str, repo_d
     """
     config = HWGA_REPOS.get(repo_name, {})
     
-    if not config.get("dotenv_sync"): # <-- CHECKING RENAMED FLAG
+    if not config.get("dotenv_sync"): 
         return
 
-    script_name = "env-generator.py" 
+    # Assuming the script name is 'env-sync.py'
+    script_name = "env-sync.py" 
     script_path = os.path.join(TOOLS_DIR, script_name)
     
     if not os.path.exists(script_path):
-        log.critical(f"Env generator script not found at {script_path}. Cannot generate .env.")
+        log.critical(f"Env sync script not found at {script_path}. Cannot generate .env.")
         raise FileNotFoundError(f"Missing {script_path}")
 
     output_file = os.path.join(repo_dir, ".env")
@@ -137,7 +138,6 @@ def _dotenv_sync_if_needed(exec_obj: Executor, repo_name: str, user: str, repo_d
     cmd_list = [
         "python3",
         script_path,
-        # "--env", "prod" # Defaulting to 'prod' or a sensible default for servers
     ]
     
     # Propagate dry-run status to the external script
@@ -145,5 +145,6 @@ def _dotenv_sync_if_needed(exec_obj: Executor, repo_name: str, user: str, repo_d
         cmd_list.append("--dry-run")
     
     # Run the script as the target user, specifying the repo dir as the current working directory.
+    # The external script handles the final file permission (600) setting.
     exec_obj.run(cmd_list, user=user, cwd=repo_dir, check=True, interactive=True)
     log.success(f"Generated and secured {repo_dir}/.env file.")
