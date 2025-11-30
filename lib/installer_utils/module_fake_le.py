@@ -6,27 +6,37 @@ from ..executor import Executor, run_function_as_user
 from ..logger import log
 from ..constants import ROOT_SRC_CHECKOUT
 from .module_docker import run_docker_compose, check_docker_volume_exists, are_docker_services_running
+from pathlib import Path # Required for Python script execution
 
 # Constants specific to this module
 NO2ID_USER = "no2id-docker"
 HWGA_DIR = f"{ROOT_SRC_CHECKOUT}/herewegoagain"
-CERT_GEN_SCRIPT = f"{ROOT_SRC_CHECKOUT}/fake-le/fake-le-for-no2id-docker"
-CA_INSTALLER_SCRIPT = f"{ROOT_SRC_CHECKOUT}/fake-le/fake-le-for-no2id-docker-installer" 
+CERT_GEN_SCRIPT = f"{ROOT_SRC_CHECKOUT}/fake-le/make-local-certs.py" 
+CA_INSTALLER_SCRIPT = f"{ROOT_SRC_CHECKOUT}/fake-le/certs-installer.py" 
 CERTBOT_VOLUME = "herewegoagain_certbot-etc"
 CORE_SERVICES: List[str] = ["wordpress", "mariadb"] 
 NGINX_SERVICE_NAME = "nginx" 
 
-# --- Helper Function to Extract CA Path ---
-def _get_ca_path(exec_obj: Executor) -> Optional[str]:
+# --- New Helper Function to Retrieve CA Path ---
+
+def _get_ca_path_str(exec_obj: Executor) -> Optional[str]:
     """
-    Runs the certificate generation script with --table-only to extract the CA path.
+    Executes the cert generation script with --table-only to ensure CA exists 
+    and returns its path.
     """
-    log.info(f"Running '{CERT_GEN_SCRIPT} --table-only' to retrieve CA path...")
+    log.info(f"Running CA generator script to retrieve CA path...")
     
-    # NOTE: Run as the user who owns the Git repo (no2id-docker)
     try:
-        # We need to capture stdout, so we must run non-interactively and suppress logging
-        result = exec_obj.run(f"'{CERT_GEN_SCRIPT}' --table-only", 
+        # NOTE: Run as the user who owns the Git repo (no2id-docker)
+        # We need to capture stdout, so we must run non-interactively
+        
+        cmd_list = [
+            "python3",
+            CERT_GEN_SCRIPT,
+            "--table-only"
+        ]
+
+        result = exec_obj.run(cmd_list, 
                               user=NO2ID_USER, 
                               check=True, 
                               run_quiet=True)
@@ -34,11 +44,15 @@ def _get_ca_path(exec_obj: Executor) -> Optional[str]:
         # The output contains "CA Root -> /path/to/ca.crt" in the "Full paths:" section
         for line in result.stdout.splitlines():
             if line.startswith("CA Root -> "):
-                ca_path = line.split(" -> ")[-1].strip()
-                log.success(f"CA Root path successfully retrieved: {ca_path}")
-                return ca_path
+                # Extracts the path string after 'CA Root -> '
+                ca_path = line.split(" -> ")[-1].strip() 
+                
+                # Check if the path ends with ca.crt
+                if Path(ca_path).name == 'ca.crt':
+                    log.success(f"CA Root path successfully retrieved: {ca_path}")
+                    return ca_path
         
-        log.error("Could not find 'CA Root -> ' line in script output.")
+        log.error("Could not find 'CA Root -> ' line in script output or path is invalid.")
         return None
         
     except Exception as e:
@@ -57,22 +71,22 @@ def setup_fake_le(exec_obj: Executor, args) -> None: # Pass the full args object
         log.critical(f"HWGA repository not found at {HWGA_DIR}. Aborting Fake-LE setup.")
         sys.exit(1)
         
-    if not os.path.exists(CERT_GEN_SCRIPT):
+    if not Path(CERT_GEN_SCRIPT).is_file(): # Use Path for file check
         log.critical(f"Cert generation script not found at {CERT_GEN_SCRIPT}. Aborting.")
         sys.exit(1)
         
-    if args.do_fake_le_ca_install and not os.path.exists(CA_INSTALLER_SCRIPT):
+    if args.do_fake_le_ca_install and not Path(CA_INSTALLER_SCRIPT).is_file(): # Use Path for file check
         log.critical(f"CA installer script not found at {CA_INSTALLER_SCRIPT}. Aborting.")
         sys.exit(1)
         
-    # Build flags for the CERT_GEN_SCRIPT
-    cert_gen_flags = []
+    # Build flags for the CERT_GEN_SCRIPT (these are now command line args for Python)
+    cert_gen_flags_list = []
     if args.fake_le_debug:
-        cert_gen_flags.append("--debug")
+        cert_gen_flags_list.append("--debug")
     if args.fake_le_dry_run:
-        cert_gen_flags.append("--dry-run")
+        cert_gen_flags_list.append("--dry-run")
     if args.fake_le_force:
-        cert_gen_flags.append("--force")
+        cert_gen_flags_list.append("--force")
     
     # --- 1. Conditional Startup of Docker Compose Services ---
     if are_docker_services_running(exec_obj, NO2ID_USER, HWGA_DIR, CORE_SERVICES):
@@ -91,14 +105,17 @@ def setup_fake_le(exec_obj: Executor, args) -> None: # Pass the full args object
         log.critical(f"Required Docker volume '{CERTBOT_VOLUME}' does not exist after startup. Cannot proceed.")
         return
 
-    # 3. Execute the certificate generation script
-    log.info(f"Executing Certificate Generation script with flags: {' '.join(cert_gen_flags)}")
+    # 3. Execute the certificate generation script (Python Script Call)
+    log.info(f"Executing Certificate Generation script with flags: {' '.join(cert_gen_flags_list)}")
     
     try:
-        # Run as the user who owns the repo (no2id-docker)
-        cert_gen_cmd = f"'{CERT_GEN_SCRIPT}' {' '.join(cert_gen_flags)}"
-        # We use run_function_as_user to delegate execution as NO2ID_USER via the shell hack
-        run_function_as_user(exec_obj, NO2ID_USER, "run_shell_cmd", cert_gen_cmd) 
+        # The command must be run as the user who owns the cert files (no2id-docker)
+        cmd_list = ["python3", CERT_GEN_SCRIPT] + cert_gen_flags_list
+        
+        # We run this command directly via the executor instance, not recursively
+        # This simplifies execution and avoids the run_shell_cmd hack entirely.
+        exec_obj.run(cmd_list, user=NO2ID_USER, check=True) 
+        
         log.success("Fake-LE certificates successfully generated.")
     except Exception as e:
         log.critical(f"Certificate generation script failed execution. Cannot restart Nginx.")
@@ -107,16 +124,17 @@ def setup_fake_le(exec_obj: Executor, args) -> None: # Pass the full args object
 
     # --- 4. CA Installer (New Conditional Step) ---
     if args.do_fake_le_ca_install:
-        ca_path = _get_ca_path(exec_obj)
+        ca_path = _get_ca_path_str(exec_obj)
         if ca_path:
             log.info("Starting CA installation process...")
             
-            # NOTE: CA Installer MUST run as root (exec_obj.run implicitly uses root if not specifying user)
-            # The installer script expects the CA path as the first argument
-            ca_install_cmd = f"'{CA_INSTALLER_SCRIPT}' '{ca_path}'"
+            # NOTE: Installer script is run as root (implicit)
+            # The command is: python3 certs-installer.py <ca_path>
+            ca_install_cmd = ["python3", CA_INSTALLER_SCRIPT, ca_path]
             
             try:
-                exec_obj.run(ca_install_cmd, force_sudo=True, check=True)
+                # We run this as root because the installer script handles its own sudo inside its main function
+                exec_obj.run(ca_install_cmd, check=True, interactive=True)
                 log.success("System-wide CA installation complete.")
             except Exception as e:
                 log.error(f"CA installation failed. Manual CA trust may be required.")

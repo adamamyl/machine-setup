@@ -30,9 +30,7 @@ class Executor:
             user: Optional[str] = None,
             env: Optional[Dict[str, str]] = None,
             check: bool = True,
-            # --- FIX: ADDED quiet override flag ---
             run_quiet: bool = False, 
-            # --------------------------------------
             interactive: bool = False) -> subprocess.CompletedProcess:
         """
         Executes a shell command. If interactive=True, it allows direct terminal I/O (no pipe capture).
@@ -142,7 +140,16 @@ def run_function_as_user(executor: Executor,
         "--run-cmd", 
         function_name
     ]
-    cmd_list.extend(func_args)
+    
+    # --- FIX: Package arguments correctly for run_shell_cmd ---
+    if function_name == "run_shell_cmd" and func_args:
+        # If it's a shell command, the entire string must be encapsulated under --run-args
+        cmd_list.append("--run-args")
+        cmd_list.extend(func_args)
+    else:
+        # Standard function arguments go positionally
+        cmd_list.extend(func_args)
+    # ----------------------------------------------------------
     
     # Propagate flags for the recursive script execution
     if executor.dry_run:
@@ -156,6 +163,6 @@ def run_function_as_user(executor: Executor,
     
     log.info(f"Delegating execution to user '{user}' for function: {function_name}")
 
-    # FIX: Run non-interactively (no user=user) but set interactive=True 
+    # Run non-interactively but set interactive=True 
     # to allow the sub-process to communicate with the terminal.
     return executor.run(cmd_list, check=True, interactive=True)
