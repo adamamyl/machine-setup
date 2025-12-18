@@ -86,7 +86,13 @@ def setup_virtmachine(exec_obj: Executor, vm_user: str = DEFAULT_VM_USER, force_
     apt_install(exec_obj, VM_PACKAGES_FULL)
 
     # 4. Handle NetworkManager/systemd-networkd conflict (unchanged)
-    # ... (Network conflict logic remains the same) ...
+    # The Executor still logs this command, but avoids the TypeError.
+    netman_enabled = exec_obj.run("systemctl is-enabled NetworkManager-wait-online.service").returncode == 0
+    networkd_enabled = exec_obj.run("systemctl is-enabled systemd-networkd-wait-online.service").returncode == 0
+    
+    if netman_enabled and networkd_enabled:
+        log.warning("Both NetworkManager and systemd-networkd are enabled. Disabling systemd-networkd for stability.")
+        exec_obj.run("systemctl disable systemd-networkd.service", force_sudo=True)
 
     # 5. Ensure fstab entry for the *initial* mount exists (unchanged)
     FSTAB_LINE_VIRTIO = "share /mnt/utm 9p trans=virtio,version=9p2000.L,rw,_netdev,nofail,auto 0 0"
