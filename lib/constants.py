@@ -81,7 +81,6 @@ DOCKER_PKGS: List[str] = [
     "docker-compose-plugin",
     "docker-buildx-plugin",
     "docker-ce-rootless-extras",
-    "docker-model-plugin",
 ]
 
 # Firewall module:
