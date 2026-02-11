@@ -1,0 +1,231 @@
+import os
+from ..executor import Executor
+from ..logger import log
+from ..constants import FIREWALL_SCRIPT_DEST, FIREWALL_SERVICE_NAME, FIREWALL_PACKAGES
+from .apt_tools import apt_install
+
+FIREWALL_SCRIPT_CONTENT = """#!/bin/bash
+# ============================================
+# CONFIGURATION - NETWORK DEFINITIONS
+# ============================================
+
+# Check for verbose flag to toggle output
+VERBOSE=false
+if [[ "$1" == "--verbose" ]]; then
+    VERBOSE=true
+fi
+
+# Helper function for conditional echoing
+v_echo() {
+    if [ "$VERBOSE" = true ]; then
+        echo "$1"
+    fi
+}
+
+# Tailscale subnets
+TAILSCALE_V4="100.64.0.0/10"
+TAILSCALE_V6="fd7a:115c:a1e0::/48"
+
+# Specific Home/Office IPv4 Addresses
+WOODSIDE_V4="90.210.184.112"
+
+# Combined Lists for Trusted Access (SSH, Mosh, Databases, etc.)
+TRUSTED_V4=(
+    "$TAILSCALE_V4"
+    "$WOODSIDE_V4"
+)
+
+TRUSTED_V6=(
+    "$TAILSCALE_V6"
+)
+
+# Service Groups
+TCP_ALLOWED=(80 443)
+UDP_ALLOWED=()
+SMTP_PORTS=(25 465 587)
+
+# Idempotent directory creation for rule persistence
+mkdir -p /etc/iptables
+
+# ============================================
+# APPLY RULES - IPv4
+# ============================================
+v_echo ">>> Initializing IPv4 Firewall Rules..."
+
+# 1. DOCKER-USER Chain (Ubuntu 24.04 Docker requirement)
+v_echo "    Configuring DOCKER-USER chain..."
+iptables -F DOCKER-USER
+
+# Trust the tailscale interface
+v_echo "    # Trust the tailscale interface"
+iptables -A DOCKER-USER -i tailscale0 -j ACCEPT  
+
+# trusted addresses (range)           
+v_echo "    # trusted addresses (range)"
+for ip in "${TRUSTED_V4[@]}"; do
+    iptables -A DOCKER-USER -s "$ip" -j ACCEPT
+done
+
+# default stuff
+v_echo "    # default stuff (established, related, public services)"
+iptables -A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+for port in "${TCP_ALLOWED[@]}"; do
+    iptables -A DOCKER-USER -p tcp --dport "$port" -j ACCEPT
+done
+
+iptables -A DOCKER-USER -j RETURN
+
+# 2. INPUT Chain (Traffic hitting the host wolfcraig)
+v_echo "    Configuring INPUT chain (Host)..."
+iptables -P INPUT DROP
+iptables -F INPUT
+
+# allow interfaces:
+v_echo "    # allow interfaces: lo and tailscale0"
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -i tailscale0 -j ACCEPT
+
+# allow states, and icmp
+v_echo "    # allow states, and icmp"
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -p icmp -j ACCEPT
+
+# Trusted Access (SSH, Mosh, etc.)
+v_echo "    # Trusted Access (SSH, Mosh, etc.)"
+for ip in "${TRUSTED_V4[@]}"; do
+    iptables -A INPUT -s "$ip" -j ACCEPT
+done
+
+# Public Services
+v_echo "    # Public Services"
+for port in "${TCP_ALLOWED[@]}"; do
+    iptables -A INPUT -p tcp --dport "$port" -j ACCEPT
+done
+
+# Toggleable UDP Rule
+v_echo "    # Toggleable UDP Rule"
+for port in "${UDP_ALLOWED[@]}"; do
+    iptables -A INPUT -p udp --dport "$port" -j ACCEPT
+done
+
+# reject everything else
+v_echo "    # reject everything else"
+iptables -A INPUT -j REJECT
+
+# 3. OUTPUT Chain
+v_echo "    Configuring OUTPUT chain..."
+# Block direct outbound SMTP 
+v_echo "    # Block direct outbound SMTP to enforce smarthost usage"
+for port in "${SMTP_PORTS[@]}"; do
+    iptables -A OUTPUT -p tcp --dport "$port" -j REJECT --reject-with tcp-reset
+done
+
+# ============================================
+# APPLY RULES - IPv6
+# ============================================
+v_echo ">>> Initializing IPv6 Firewall Rules..."
+
+ip6tables -P INPUT DROP
+ip6tables -F INPUT
+
+# accept v6 from these interfaces
+v_echo "    # accept v6 from these interfaces: lo and tailscale0"
+ip6tables -A INPUT -i lo -j ACCEPT
+ip6tables -A INPUT -i tailscale0 -j ACCEPT
+
+# state
+v_echo "    # state: established, related, and icmpv6"
+ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+ip6tables -A INPUT -p ipv6-icmp -j ACCEPT
+
+# allow-listing
+v_echo "    # allow-listing trusted v6 addresses"
+for ip6 in "${TRUSTED_V6[@]}"; do
+    ip6tables -A INPUT -s "$ip6" -j ACCEPT
+done
+
+# Allow tcp traffic
+v_echo "    # Allow tcp traffic (IPv6)"
+for port in "${TCP_ALLOWED[@]}"; do
+    ip6tables -A INPUT -p tcp --dport "$port" -j ACCEPT
+done
+
+# reject everything else
+v_echo "    # reject everything else (IPv6)"
+ip6tables -A INPUT -j REJECT
+
+# ============================================
+# PERSISTENCE
+# ============================================
+v_echo ">>> Saving rules for persistence..."
+iptables-save > /etc/iptables/rules.v4
+ip6tables-save > /etc/iptables/rules.v6
+
+v_echo "Firewall applied with tailscale0 trusted."
+"""
+
+SERVICE_CONTENT = f"""[Unit]
+Description=Custom Iptables Firewall with Docker and Tailscale Support
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={FIREWALL_SCRIPT_DEST}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+def setup_firewall(exec_obj: Executor) -> None:
+    """Installs required packages, script, and service. Prompts for application."""
+    log.info("Starting **Firewall** setup...")
+
+    # 1. Install Required Packages
+    log.info("Ensuring firewall dependencies are installed...")
+    apt_install(exec_obj, FIREWALL_PACKAGES)
+
+    # 2. Install the Management Script
+    log.info(f"Writing firewall management script to {FIREWALL_SCRIPT_DEST}")
+    # Using a temporary file to handle the large string safely with sudo
+    tmp_path = "/tmp/firewall_setup.sh"
+    with open(tmp_path, "w") as f:
+        f.write(FIREWALL_SCRIPT_CONTENT)
+    
+    exec_obj.run(f"mv {tmp_path} {FIREWALL_SCRIPT_DEST}", force_sudo=True)
+    exec_obj.run(f"chmod +x {FIREWALL_SCRIPT_DEST}", force_sudo=True)
+    exec_obj.run(f"chown root:root {FIREWALL_SCRIPT_DEST}", force_sudo=True)
+
+    # 3. Install the Systemd Service
+    service_path = f"/etc/systemd/system/{FIREWALL_SERVICE_NAME}"
+    log.info(f"Installing systemd service at {service_path}")
+    
+    tmp_service = "/tmp/firewall.service"
+    with open(tmp_service, "w") as f:
+        f.write(SERVICE_CONTENT)
+        
+    exec_obj.run(f"mv {tmp_service} {service_path}", force_sudo=True)
+    exec_obj.run("systemctl daemon-reload", force_sudo=True)
+    exec_obj.run(f"systemctl enable {FIREWALL_SERVICE_NAME}", force_sudo=True)
+
+    # 4. Interactive Confirmation to Apply
+    if exec_obj.dry_run:
+        log.info("[DRY-RUN] Skipping interactive firewall application.")
+        return
+
+    print("\n" + "!"*70)
+    log.warning("FIREWALL INSTALLATION COMPLETE.")
+    log.warning("Applying these rules now may affect active network connections.")
+    print("!"*70 + "\n")
+
+    confirm = input("Would you like to apply the firewall rules immediately? (y/N): ").lower()
+    if confirm == 'y':
+        log.info("Applying firewall rules via systemd...")
+        exec_obj.run(f"systemctl start {FIREWALL_SERVICE_NAME}", force_sudo=True)
+        log.success("Firewall rules applied and service is active.")
+    else:
+        log.info("Firewall rules not applied. You can apply them later with:")
+        log.info(f"  sudo systemctl start {FIREWALL_SERVICE_NAME}")
+
+    log.success("Firewall module configuration finished.")

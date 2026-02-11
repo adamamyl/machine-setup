@@ -83,3 +83,11 @@ DOCKER_PKGS: List[str] = [
     "docker-ce-rootless-extras",
     "docker-model-plugin",
 ]
+
+# Firewall module:
+FIREWALL_SCRIPT_DEST: str = "/usr/local/bin/apply-firewall.sh"
+FIREWALL_SERVICE_NAME: str = "firewall.service"
+FIREWALL_CONF_DIR: str = "/etc/iptables"
+# iptables and ip6tables are standard, but we ensure iptables-persistent 
+# directory structure exists for our own script's logic.
+FIREWALL_PACKAGES: List[str] = ["iptables", "curl"]
