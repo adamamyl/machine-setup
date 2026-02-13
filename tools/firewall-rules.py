@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, subprocess
+import json, subprocess, re
 
 # ANSI Color Codes for Dark Mode Terminals
 C_RESET = "\033[0m"
@@ -9,6 +9,23 @@ C_RED   = "\033[31m"
 C_CYAN  = "\033[36m"
 C_BLUE  = "\033[34m"
 C_YELL  = "\033[33m"
+
+def get_visual_width(text):
+    """
+    Calculates the actual space a string takes in the terminal.
+    1. Removes ANSI escape sequences (0 width).
+    2. Counts emojis/special chars as 2 spaces if they are multi-byte.
+    """
+    # Remove ANSI codes
+    plain_text = re.sub(r'\033\[[0-9;]*m', '', text)
+    width = 0
+    for char in plain_text:
+        # Check if character is an emoji/wide char (Basic heuristic)
+        if ord(char) > 0x1F000 or char in "✅❌🕵️🔄🐳↪️":
+            width += 2
+        else:
+            width += 1
+    return width
 
 def extract_address(val):
     """Extract readable IP/CIDR from nftables expr right field."""
@@ -45,9 +62,7 @@ for item in ruleset.get("nftables", []):
 
     num = str(rule.get("handle", "-"))
     pkts = bytes_ = "0"
-    target = "-"
-    prot = opt = "-"
-    in_if = out_if = "-"
+    target = prot = opt = in_if = out_if = "-"
     src = dst = []
 
     exprs = rule.get("expr", [])
@@ -55,56 +70,44 @@ for item in ruleset.get("nftables", []):
         if "counter" in expr:
             pkts = str(expr["counter"].get("packets", 0))
             bytes_ = str(expr["counter"].get("bytes", 0))
-        if "jump" in expr:
-            target = str(expr["jump"].get("target", "-"))
-        if "accept" in expr:
-            target = "ACCEPT"
-        if "reject" in expr:
-            target = "REJECT"
-        if "drop" in expr:
-            target = "DROP"
-
-        meta = expr.get("meta")
-        if meta:
-            key = meta.get("key")
-            if key == "iifname":
-                in_if = str(meta.get("iifname", "-"))
-            elif key == "oifname":
-                out_if = str(meta.get("oifname", "-"))
-            elif key == "l4proto":
-                prot = str(meta.get("l4proto", "-"))
+        if "jump" in expr: target = str(expr["jump"].get("target", "-"))
+        if "accept" in expr: target = "ACCEPT"
+        if "reject" in expr: target = "REJECT"
+        if "drop" in expr: target = "DROP"
 
         match = expr.get("match")
         if match and "left" in match:
-            left = match["left"]
-            right = match.get("right", "-")
-            if "payload" in left:
-                fld = left["payload"].get("field")
-                if fld == "saddr":
-                    src.extend(extract_address(right))
-                elif fld == "daddr":
-                    dst.extend(extract_address(right))
-            elif "meta" in left:
-                key = left["meta"].get("key")
-                if key == "iifname":
-                    in_if = str(right)
-                elif key == "oifname":
-                    out_if = str(right)
+            left, right = match["left"], match.get("right", "-")
+            fld = left.get("payload", {}).get("field") or left.get("meta", {}).get("key")
+            if fld == "saddr": src.extend(extract_address(right))
+            elif fld == "daddr": dst.extend(extract_address(right))
+            elif fld == "iifname": in_if = str(right)
+            elif fld == "oifname": out_if = str(right)
 
     src = src if src else ["-"]
     dst = dst if dst else ["-"]
 
     rows.append([
         num, pkts, bytes_, target, prot, opt, in_if, out_if,
-        "\n".join(src),
-        "\n".join(dst),
-        rule.get("chain", "-"),
-        rule.get("table", "-"),
-        rule.get("family", "-")
+        "\n".join(src), "\n".join(dst),
+        rule.get("chain", "-"), rule.get("table", "-"), rule.get("family", "-")
     ])
 
-widths = [max(len(col), *(max(len(line) for line in str(row[i]).split("\n")) for row in rows))
-          for i, col in enumerate(columns)]
+# Calculate column widths using the visual width helper
+widths = []
+for i, col in enumerate(columns):
+    max_w = len(col)
+    for row in rows:
+        lines = str(row[i]).split("\n")
+        # For each cell, we calculate the visual width of its longest line
+        for line in lines:
+            # Important: apply_color logic affects width, so we test the result
+            visual_w = get_visual_width(line)
+            # Add +3 for emoji/icon padding leeway
+            if line in ["tailscale0", "lo", "ACCEPT", "DROP", "REJECT"]:
+                visual_w += 1 
+            max_w = max(max_w, visual_w)
+    widths.append(max_w)
 
 def hline(char="-", cross="+"):
     return cross + cross.join([char * (width + 2) for width in widths]) + cross
@@ -120,31 +123,32 @@ def apply_color(val, col_name):
         if "tailscale" in s_val: return f"{C_CYAN}🕵️  {s_val}{C_RESET}"
         if "lo" in s_val: return f"{C_BLUE}🔄 {s_val}{C_RESET}"
         if "br-" in s_val or "docker" in s_val: return f"{C_YELL}🐳 {s_val}{C_RESET}"
-        if s_val == "-": return s_val
-        return f"{C_BOLD}{s_val}{C_RESET}"
-    if col_name == "Num": return f"{C_YELL}{s_val}{C_RESET}"
     return s_val
 
+# Print table
 print(hline("=", "+"))
 print("| " + " | ".join(columns[i].ljust(widths[i]) for i in range(len(columns))) + " |")
 print(hline("=", "+"))
 
-last_chain_table_family = ("", "", "")
+last_group = None
 for row in rows:
-    chain_table_family = (row[10], row[11], row[12])
-    if chain_table_family != last_chain_table_family and last_chain_table_family != ("", "", ""):
+    current_group = (row[10], row[11], row[12])
+    if last_group and current_group != last_group:
         print(hline("-", "+"))
-    last_chain_table_family = chain_table_family
+    last_group = current_group
 
-    num_lines = max(len(str(row[i]).split("\n")) for i in range(len(row)))
-    for line_idx in range(num_lines):
+    num_lines = max(len(str(cell).split("\n")) for cell in row)
+    for idx in range(num_lines):
         line_parts = []
-        for i in range(len(row)):
-            cell_lines = str(row[i]).split("\n")
-            raw_val = cell_lines[line_idx] if line_idx < len(cell_lines) else ""
+        for i, cell in enumerate(row):
+            lines = str(cell).split("\n")
+            raw_val = lines[idx] if idx < len(lines) else ""
             colored_val = apply_color(raw_val, columns[i])
-            padding = " " * (widths[i] - len(raw_val))
+            
+            # Manual padding calculation using visual width
+            vis_w = get_visual_width(colored_val)
+            padding = " " * (widths[i] - vis_w)
             line_parts.append(f" {colored_val}{padding} ")
-        print("|" + "|".join(line_parts) + "|")
+        print(f"|{'|'.join(line_parts)}|")
 
 print(hline("=", "+"))
