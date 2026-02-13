@@ -7,6 +7,8 @@ from .apt_tools import apt_install
 # ==============================================================================
 # FIREWALL RULES HELPER SCRIPT (Diagnostic Tool)
 # ==============================================================================
+# Note: This string uses 'r' prefix to treat backslashes literally and 
+# starts the content at the very first column to prevent IndentationErrors.
 FIREWALL_RULES_HELPER_CONTENT = r"""#!/usr/bin/env python3
 import json, subprocess
 
@@ -357,7 +359,6 @@ def setup_firewall(exec_obj: Executor) -> None:
 
     # 2. Install the Management Script
     log.info(f"Writing firewall management script to {FIREWALL_SCRIPT_DEST}")
-    # Using a temporary file to handle the large string safely with sudo
     tmp_path = "/tmp/firewall_setup.sh"
     with open(tmp_path, "w") as f:
         f.write(FIREWALL_SCRIPT_CONTENT)
