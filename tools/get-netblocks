@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -e
+
+# 1. Fetch current machine info
+IP_DATA=$(curl -s "http://ipinfo.io/json")
+MY_IP=$(echo "$IP_DATA" | jq -r '.ip')
+# Extract ASN number (e.g., "AS5607 Sky UK Limited" -> "5607")
+CURRENT_ASN=$(echo "$IP_DATA" | jq -r '.org' | awk '{print $1}' | sed 's/AS//')
+
+echo "# Local Machine Check:"
+echo "# Current IP:  $MY_IP"
+echo "# Current ASN: AS$CURRENT_ASN"
+
+declare -A NETWORKS
+NETWORKS=(
+    ["MYTHIC"]="44684"
+    ["SKY"]="5607"
+)
+
+for LABEL in "${!NETWORKS[@]}"; do
+    ASN="${NETWORKS[$LABEL]}"
+    
+    if [[ "$LABEL" == "SKY" ]]; then
+        echo -e "\n# $LABEL (AS$ASN) - Parent Netblock Only:"
+        
+        # Fetch ALL prefixes for Sky to find the parent
+        PREFIXES=$(curl -s "https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS$ASN" | jq -r '.data.prefixes[].prefix')
+        
+        # Find the specific block containing your IP using Python
+        PARENT_BLOCK=$(python3 -c "
+import ipaddress
+my_ip = ipaddress.ip_address('$MY_IP')
+prefixes = \"\"\"$PREFIXES\"\"\".split()
+# Find the most specific (smallest) block that contains the IP
+matches = [p for p in prefixes if my_ip in ipaddress.ip_network(p)]
+if matches:
+    # Sort by mask length descending to get the most specific block
+    matches.sort(key=lambda p: ipaddress.ip_network(p).prefixlen, reverse=True)
+    print(matches[0])
+")
+        
+        if [[ -n "$PARENT_BLOCK" ]]; then
+            echo "    ipaddress.ip_network(\"$PARENT_BLOCK\"), # Contains your current IP ($MY_IP)"
+        else
+            # Fallback to /32 if for some reason RIPE doesn't have the block yet
+            echo "    ipaddress.ip_network(\"$MY_IP/32\"), # Fallback"
+        fi
+
+    else
+        echo -e "\n# $LABEL (AS$ASN) Full Collection:"
+        # Fetch live prefixes from RIPEstat for Mythic
+        curl -s "https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS$ASN" \
+            | jq -r '.data.prefixes[].prefix' \
+            | sort -V  \
+            | sed 's/.*/    ipaddress.ip_network("&"),/'
+    fi
+done
