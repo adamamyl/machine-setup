@@ -12,16 +12,17 @@ C_YELL  = "\033[33m"
 
 def get_visual_width(text):
     """
-    Calculates the actual space a string takes in the terminal.
+    Calculates actual terminal space taken by a string.
     1. Removes ANSI escape sequences (0 width).
-    2. Counts emojis/special chars as 2 spaces if they are multi-byte.
+    2. Counts known emojis/icons as 2 spaces.
     """
-    # Remove ANSI codes
+    # Remove ANSI codes first
     plain_text = re.sub(r'\033\[[0-9;]*m', '', text)
     width = 0
+    # List of emojis used in apply_color that take double width
+    emojis = "✅❌🕵️🔄🐳↪️"
     for char in plain_text:
-        # Check if character is an emoji/wide char (Basic heuristic)
-        if ord(char) > 0x1F000 or char in "✅❌🕵️🔄🐳↪️":
+        if char in emojis:
             width += 2
         else:
             width += 1
@@ -54,19 +55,16 @@ columns = ["Num", "Pkts", "Bytes", "Target", "Prot", "Opt", "In", "Out",
            "Source", "Destination", "Chain", "Table", "Family"]
 rows = []
 
-# Process each rule
 for item in ruleset.get("nftables", []):
     rule = item.get("rule")
-    if not rule:
-        continue
+    if not rule: continue
 
     num = str(rule.get("handle", "-"))
     pkts = bytes_ = "0"
     target = prot = opt = in_if = out_if = "-"
     src = dst = []
 
-    exprs = rule.get("expr", [])
-    for expr in exprs:
+    for expr in rule.get("expr", []):
         if "counter" in expr:
             pkts = str(expr["counter"].get("packets", 0))
             bytes_ = str(expr["counter"].get("bytes", 0))
@@ -74,7 +72,7 @@ for item in ruleset.get("nftables", []):
         if "accept" in expr: target = "ACCEPT"
         if "reject" in expr: target = "REJECT"
         if "drop" in expr: target = "DROP"
-
+        
         match = expr.get("match")
         if match and "left" in match:
             left, right = match["left"], match.get("right", "-")
@@ -84,36 +82,14 @@ for item in ruleset.get("nftables", []):
             elif fld == "iifname": in_if = str(right)
             elif fld == "oifname": out_if = str(right)
 
-    src = src if src else ["-"]
-    dst = dst if dst else ["-"]
-
     rows.append([
         num, pkts, bytes_, target, prot, opt, in_if, out_if,
-        "\n".join(src), "\n".join(dst),
+        "\n".join(src or ["-"]), "\n".join(dst or ["-"]),
         rule.get("chain", "-"), rule.get("table", "-"), rule.get("family", "-")
     ])
 
-# Calculate column widths using the visual width helper
-widths = []
-for i, col in enumerate(columns):
-    max_w = len(col)
-    for row in rows:
-        lines = str(row[i]).split("\n")
-        # For each cell, we calculate the visual width of its longest line
-        for line in lines:
-            # Important: apply_color logic affects width, so we test the result
-            visual_w = get_visual_width(line)
-            # Add +3 for emoji/icon padding leeway
-            if line in ["tailscale0", "lo", "ACCEPT", "DROP", "REJECT"]:
-                visual_w += 1 
-            max_w = max(max_w, visual_w)
-    widths.append(max_w)
-
-def hline(char="-", cross="+"):
-    return cross + cross.join([char * (width + 2) for width in widths]) + cross
-
 def apply_color(val, col_name):
-    """Apply ANSI colors and emojis based on content."""
+    """Apply ANSI colors and emojis."""
     s_val = str(val)
     if col_name == "Target":
         if "ACCEPT" in s_val: return f"{C_BOLD}{C_GREEN}✅ {s_val}{C_RESET}"
@@ -125,8 +101,24 @@ def apply_color(val, col_name):
         if "br-" in s_val or "docker" in s_val: return f"{C_YELL}🐳 {s_val}{C_RESET}"
     return s_val
 
-# Print table
+# Calculate dynamic widths based on visual (terminal) size
+widths = []
+for i, col in enumerate(columns):
+    max_w = len(col)
+    for row in rows:
+        lines = str(row[i]).split("\n")
+        for line in lines:
+            # We calculate width AFTER applying color/emoji logic
+            visual_w = get_visual_width(apply_color(line, columns[i]))
+            max_w = max(max_w, visual_w)
+    widths.append(max_w)
+
+def hline(char="-", cross="+"):
+    return cross + cross.join([char * (w + 2) for w in widths]) + cross
+
+# Render Table
 print(hline("=", "+"))
+# Header row (standard length works for header text)
 print("| " + " | ".join(columns[i].ljust(widths[i]) for i in range(len(columns))) + " |")
 print(hline("=", "+"))
 
@@ -142,13 +134,13 @@ for row in rows:
         line_parts = []
         for i, cell in enumerate(row):
             lines = str(cell).split("\n")
-            raw_val = lines[idx] if idx < len(lines) else ""
-            colored_val = apply_color(raw_val, columns[i])
+            raw_content = lines[idx] if idx < len(lines) else ""
+            colored_content = apply_color(raw_content, columns[i])
             
-            # Manual padding calculation using visual width
-            vis_w = get_visual_width(colored_val)
-            padding = " " * (widths[i] - vis_w)
-            line_parts.append(f" {colored_val}{padding} ")
+            # Use visual width to calculate exact padding needed
+            v_width = get_visual_width(colored_content)
+            padding = " " * (widths[i] - v_width)
+            line_parts.append(f" {colored_content}{padding} ")
         print(f"|{'|'.join(line_parts)}|")
 
 print(hline("=", "+"))
