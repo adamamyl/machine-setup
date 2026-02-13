@@ -22,24 +22,20 @@ v_echo() {
     fi
 }
 
-# Tailscale subnets
+# Network Definitions
 TAILSCALE_V4="100.64.0.0/10"
 TAILSCALE_V6="fd7a:115c:a1e0::/48"
 
 # Specific Home/Office IPv4 Addresses
 WOODSIDE_V4="90.210.184.112"
 
-# Combined Lists for Trusted Access (SSH, Mosh, Databases, etc.)
-TRUSTED_V4=(
-    "$TAILSCALE_V4"
-    "$WOODSIDE_V4"
-)
+TRUSTED_V4=("$TAILSCALE_V4" "$WOODSIDE_V4")
+TRUSTED_V6=("$TAILSCALE_V6")
 
-TRUSTED_V6=(
-    "$TAILSCALE_V6"
-)
+# Docker Subnets (Extracted from your compose/network setup)
+DOCKER_V4_SUBNET="172.16.0.0/12" # Broad range covering standard Docker pools
+GHOST_NET_V4="172.18.0.0/16"    # Specific subnet seen in your nftables logs
 
-# Service Groups
 TCP_ALLOWED=(80 443)
 UDP_ALLOWED=()
 SMTP_PORTS=(25 465 587)
@@ -52,7 +48,19 @@ mkdir -p /etc/iptables
 # ============================================
 v_echo ">>> Initializing IPv4 Firewall Rules..."
 
-# 1. DOCKER-USER Chain (Ubuntu 24.04 Docker requirement)
+# FORWARD Chain - The critical fix for Caddy/Docker
+v_echo "    Configuring FORWARD chain (Least Privilege)..."
+iptables -P FORWARD DROP
+iptables -F FORWARD
+
+# Allow established traffic back into containers
+iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# Allow Docker containers to initiate outbound connections (DNS/ACME)
+iptables -A FORWARD -s "$GHOST_NET_V4" -j ACCEPT
+iptables -A FORWARD -s "$DOCKER_V4_SUBNET" -j ACCEPT
+
+# DOCKER-USER Chain
 v_echo "    Configuring DOCKER-USER chain..."
 iptables -F DOCKER-USER
 
@@ -75,7 +83,7 @@ done
 
 iptables -A DOCKER-USER -j RETURN
 
-# 2. INPUT Chain (Traffic hitting the host wolfcraig)
+# INPUT Chain (Host Protection)
 v_echo "    Configuring INPUT chain (Host)..."
 iptables -P INPUT DROP
 iptables -F INPUT
@@ -112,7 +120,7 @@ done
 v_echo "    # reject everything else"
 iptables -A INPUT -j REJECT
 
-# 3. OUTPUT Chain
+# OUTPUT Chain
 v_echo "    Configuring OUTPUT chain..."
 # Block direct outbound SMTP 
 v_echo "    # Block direct outbound SMTP to enforce smarthost usage"
@@ -127,6 +135,8 @@ v_echo ">>> Initializing IPv6 Firewall Rules..."
 
 ip6tables -P INPUT DROP
 ip6tables -F INPUT
+ip6tables -P FORWARD DROP
+ip6tables -F FORWARD
 
 # accept v6 from these interfaces
 v_echo "    # accept v6 from these interfaces: lo and tailscale0"
@@ -157,11 +167,10 @@ ip6tables -A INPUT -j REJECT
 # ============================================
 # PERSISTENCE
 # ============================================
-v_echo ">>> Saving rules for persistence..."
+v_echo ">>> Saving rules..."
 iptables-save > /etc/iptables/rules.v4
 ip6tables-save > /etc/iptables/rules.v6
-
-v_echo "Firewall applied with tailscale0 trusted."
+v_echo "Firewall applied with Docker Forwarding restricted to local subnets."
 """
 
 SERVICE_CONTENT = f"""[Unit]
