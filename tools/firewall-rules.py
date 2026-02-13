@@ -2,120 +2,203 @@
 import json
 import subprocess
 import sys
-from rich.console import Console
-from rich.text import Text
+import re
+import ipaddress
 
-# Configure console for high contrast
-console = Console(width=160, legacy_windows=False)
+# Muted High-Contrast Palette
+C_RESET = "\033[0m"
+C_BOLD  = "\033[1m"
+C_DIM   = "\033[2m"
+
+# Action Background "Pills"
+BG_GREEN = "\033[48;5;114;30m"  # Sage (ACCEPT)
+BG_RED   = "\033[48;5;167;30m"  # Coral (DROP/REJECT)
+BG_YELL  = "\033[48;5;186;30m"  # Sand (JUMP)
+
+# Interface/Context Background Pills
+BG_CYAN  = "\033[48;5;117;30m"  # Sky Blue (Tailscale)
+BG_BLUE  = "\033[48;5;111;30m"  # Cornflower (Loopback)
+BG_ORNG  = "\033[48;5;209;30m"  # Peach (Docker)
+BG_GRAY  = "\033[48;5;240;37m"  # Gray (Generic)
+
+# Muted Text Colors
+C_CYAN  = "\033[38;5;117m"  # Tailscale
+C_ORNG  = "\033[38;5;209m"  # Docker
+C_BLUE  = "\033[38;5;111m"  # Loopback
+C_MAG   = "\033[38;5;170m"  # Sky Magenta (AS5607)
+C_LIME  = "\033[38;5;112m"  # Mythic Lime (AS44684)
+C_NUM   = "\033[38;5;223m"  # Cream
+C_IP    = "\033[38;5;153m"  # Default IP Blue
+C_GREEN = "\033[38;5;114m"
+C_RED   = "\033[38;5;167m"
+C_YELL  = "\033[38;5;186m"
+
+# Network Definitions
+try:
+    DOCKER_NETS = [ipaddress.ip_network("172.16.0.0/12")]
+    TS_NETS = [
+        ipaddress.ip_network("100.64.0.0/10"),
+        ipaddress.ip_network("fd7a:115c:a1e0:ab12::/64")
+    ]
+    # Sky (AS5607) Aggregate ranges
+    SKY_NETS = [
+        ipaddress.ip_network("90.192.0.0/11"),
+        ipaddress.ip_network("2.24.0.0/13"),
+        ipaddress.ip_network("2a02:c78::/29")
+    ]
+    # Mythic (AS44684) Aggregate ranges
+    MYTHIC_NETS = [
+        ipaddress.ip_network("46.235.224.0/19"),
+        ipaddress.ip_network("93.93.128.0/19"),
+        ipaddress.ip_network("2a00:1098::/32")
+    ]
+except ValueError:
+    DOCKER_NETS, TS_NETS, SKY_NETS, MYTHIC_NETS = [], [], [], []
+
+def get_visual_width(text):
+    return len(re.sub(r'\033\[[0-9;]*m', '', text))
+
+def format_num(n):
+    try: return f"{int(n):,}".replace(",", "'")
+    except: return "0"
 
 def extract_address(val):
-    """Extract readable IP/CIDR from nftables."""
     if isinstance(val, str): return [val]
     if isinstance(val, dict):
-        if "prefix" in val:
-            p = val["prefix"]
-            return [f"{p['addr']}/{p['len']}"]
+        if "prefix" in val: return [f"{val['prefix']['addr']}/{val['prefix']['len']}"]
         if "set" in val:
-            result = []
-            for entry in val["set"]:
-                result.extend(extract_address(entry))
-            return result
+            res = []
+            for e in val["set"]: res.extend(extract_address(e))
+            return res
     return ["-"]
 
-def get_row_icons(target, in_if):
-    """Returns a 5-character string containing relevant status icons."""
-    icons = ""
-    # Target Icon
-    if "ACCEPT" in target: icons += "✅"
-    elif "DROP" in target or "REJECT" in target: icons += "❌"
-    else: icons += "↪️ "
-    
-    # Interface Icon
-    if "tailscale" in in_if: icons += "🕵️ "
-    elif "lo" in in_if: icons += "🔄"
-    elif "br-" in in_if or "docker" in in_if: icons += "🐳"
-    
-    return icons.ljust(5)
+def colorize_address(addr):
+    if addr in ["-", "", None]: return addr
+    try:
+        target = ipaddress.ip_network(addr, strict=False)
+        is_net = (target.num_addresses > 1)
+        
+        if target.is_loopback: return f"{C_BLUE}{addr}{C_RESET}"
+        
+        # Mythic Check
+        for net in MYTHIC_NETS:
+            if target.overlaps(net): return f"{C_LIME}{addr}{C_RESET}"
+        
+        # Sky Check
+        for net in SKY_NETS:
+            if target.overlaps(net): return f"{C_MAG}{addr}{C_RESET}"
+            
+        # Docker Check
+        for net in DOCKER_NETS:
+            if target.overlaps(net): return f"{C_ORNG}{addr}{C_RESET}"
+            
+        # Tailscale Check
+        for net in TS_NETS:
+            if target.overlaps(net): return f"{C_CYAN}{addr}{C_RESET}"
+    except: pass
+    return f"{C_IP}{addr}{C_RESET}"
 
-# Fetch nftables ruleset JSON
+def get_row_labels(target, in_if):
+    if "ACCEPT" in target: t_label = f"{BG_GREEN} OK {C_RESET}" 
+    elif "DROP" in target or "REJECT" in target: t_label = f"{BG_RED} !! {C_RESET}"   
+    else: t_label = f"{BG_YELL} >> {C_RESET}" 
+    
+    if "tailscale" in in_if: i_label = f"{BG_CYAN} TS {C_RESET}" 
+    elif "lo" in in_if: i_label = f"{BG_BLUE} LO {C_RESET}" 
+    elif "br-" in in_if or "docker" in in_if: i_label = f"{BG_ORNG} DK {C_RESET}" 
+    else: i_label = f"{BG_GRAY} -- {C_RESET}"
+    return f"{t_label} {i_label}"
+
 try:
     raw = subprocess.check_output(["nft", "-j", "list", "ruleset"], text=True)
     ruleset = json.loads(raw)
 except Exception as e:
-    console.print(f"[bold red]Error:[/bold red] {e}"); sys.exit(1)
+    print(f"Error: {e}"); sys.exit(1)
 
-# Unified Column Definition (Fixed Widths)
-# Icons | Num | Pkts | Bytes | Target | In | Source | Destination | Chain | Table | Family
-FMT = "| {:<5} | {:<4} | {:<10} | {:<12} | {:<10} | {:<10} | {:<22} | {:<22} | {:<12} | {:<8} | {:<6} |"
-SEP = "+-------+------+------------+--------------+------------+------------+------------------------+------------------------+--------------+----------+--------+"
+columns = ["num", "stat", "pkts", "bytes", "target", "in_if", "src", "dst", "chain", "table", "family"]
+headers = ["NUM", "STAT", "PKTS", "BYTES", "TARGET", "IN", "SOURCE", "DESTINATION", "CHAIN", "TABLE", "FAM"]
+data_rows = []
+col_widths = {k: len(h) for k, h in zip(columns, headers)}
 
-# Print Header
-console.print(SEP)
-console.print(FMT.format("STAT", "NUM", "PKTS", "BYTES", "TARGET", "IN", "SOURCE", "DESTINATION", "CHAIN", "TABLE", "FAM"))
-console.print(SEP.replace("-", "="))
-
-rows = []
 for item in ruleset.get("nftables", []):
     rule = item.get("rule")
     if not rule: continue
-
-    num = str(rule.get("handle", "-"))
-    pkts = bytes_ = 0
-    target = in_if = "-"
+    row = {
+        "num": f"{C_NUM}{rule.get('handle', '-')}{C_RESET}",
+        "stat": get_row_labels("-", "-"), # Placeholder
+        "pkts": format_num(0), "bytes": format_num(0),
+        "target": "-", "in_if": "-", "src": ["-"], "dst": ["-"],
+        "chain": rule.get("chain", "-"), "table": rule.get("table", "-"), "family": rule.get("family", "-"),
+        "ctx": (rule.get("chain"), rule.get("table"), rule.get("family"))
+    }
+    
     src_list, dst_list = [], []
-
     for expr in rule.get("expr", []):
         if "counter" in expr:
-            pkts, bytes_ = expr['counter'].get('packets', 0), expr['counter'].get('bytes', 0)
-        if "accept" in expr: target = "ACCEPT"
-        elif "reject" in expr: target = "REJECT"
-        elif "drop" in expr: target = "DROP"
-        elif "jump" in expr: target = expr["jump"].get("target", "JUMP")
-        
+            row["pkts"], row["bytes"] = format_num(expr['counter'].get('packets', 0)), format_num(expr['counter'].get('bytes', 0))
+        if "accept" in expr: row["target"] = "ACCEPT"
+        elif "reject" in expr: row["target"] = "REJECT"
+        elif "drop" in expr: row["target"] = "DROP"
+        elif "jump" in expr: row["target"] = expr["jump"].get("target", "JUMP")
         match = expr.get("match")
         if match and "left" in match:
-            left, right = match["left"], match.get("right", "-")
-            f = left.get("payload", {}).get("field") or left.get("meta", {}).get("key")
-            if f == "saddr": src_list.extend(extract_address(right))
-            elif f == "daddr": dst_list.extend(extract_address(right))
-            elif f == "iifname": in_if = str(right)
+            l, r = match["left"], match.get("right", "-")
+            f = l.get("payload", {}).get("field") or l.get("meta", {}).get("key")
+            if f == "saddr": src_list.extend(extract_address(r))
+            elif f == "daddr": dst_list.extend(extract_address(r))
+            elif f == "iifname": row["in_if"] = str(r)
 
-    rows.append({
-        "icons": get_row_icons(target, in_if),
-        "num": num, "pkts": pkts, "bytes": bytes_, "target": target, "in_if": in_if,
-        "src": src_list if src_list else ["-"], 
-        "dst": dst_list if dst_list else ["-"],
-        "chain": rule.get("chain", "-"), "table": rule.get("table", "-"), "family": rule.get("family", "-")
-    })
-
-last_section = None
-for r in rows:
-    # Logic for Section Breaks: Check (Chain, Table, Family) tuple
-    current_section = (r["chain"], r["table"], r["family"])
-    if last_section and current_section != last_section:
-        console.print(SEP)
-    last_section = current_section
-
-    # Multi-line Source/Destination handling
-    max_lines = max(len(r["src"]), len(r["dst"]))
-    for i in range(max_lines):
-        s = r["src"][i] if i < len(r["src"]) else ""
-        d = r["dst"][i] if i < len(r["dst"]) else ""
-        
-        if i == 0:
-            # Color coding for readability
-            t_color = "green" if "ACCEPT" in r["target"] else "red" if r["target"] in ["DROP", "REJECT"] else "yellow"
-            console.print(FMT.format(
-                r["icons"],
-                f"[yellow]{r['num']}[/]",
-                f"{r['pkts']:,}",
-                f"{r['bytes']:,}",
-                f"[bold {t_color}]{r['target']}[/]",
-                f"[cyan]{r['in_if']}[/]",
-                s, d,
-                f"[dim]{r['chain']}[/]", r["table"], r["family"]
-            ))
+    row["stat"] = get_row_labels(row["target"], row["in_if"])
+    row["src"], row["dst"] = (src_list if src_list else ["-"]), (dst_list if dst_list else ["-"])
+    
+    for k in columns:
+        if k in ["src", "dst"]:
+            for line in row[k]: col_widths[k] = max(col_widths[k], get_visual_width(line))
         else:
-            console.print(FMT.format("", "", "", "", "", "", s, d, "", "", ""))
+            col_widths[k] = max(col_widths[k], get_visual_width(str(row[k])))
+    data_rows.append(row)
 
-console.print(SEP)
+def get_sep(char="-"):
+    parts = [char * (col_widths[k] + 2) for k in columns]
+    return f"+{'+'.join(parts)}+"
+
+def print_row(data_dict, is_header=False):
+    src_raw = data_dict.get("src", [""]) if not is_header else ["SOURCE"]
+    dst_raw = data_dict.get("dst", [""]) if not is_header else ["DESTINATION"]
+    max_lines = max(len(src_raw), len(dst_raw))
+
+    for idx in range(max_lines):
+        cells = []
+        for k in columns:
+            if is_header: val = headers[columns.index(k)]
+            elif idx == 0:
+                val = str(data_dict.get(k, ""))
+                if k == "src": val = src_raw[0]
+                elif k == "dst": val = dst_raw[0]
+                if k == "in_if": 
+                    color = BG_CYAN if "tailscale" in val else BG_BLUE if "lo" in val else BG_ORNG if ("br-" in val or "docker" in val) else C_RESET
+                    val = f"{color}{val}{C_RESET}" if val != "-" else val
+                elif k == "target":
+                    color = C_GREEN if "ACCEPT" in val else C_RED if ("DROP" in val or "REJECT" in val) else C_YELL
+                    val = f"{C_BOLD}{color}{val}{C_RESET}"
+                elif k == "chain": val = f"{C_DIM}{val}{C_RESET}"
+                elif k in ["src", "dst"]: val = colorize_address(val)
+            else:
+                val = (src_raw[idx] if k == "src" and idx < len(src_raw) else dst_raw[idx] if k == "dst" and idx < len(dst_raw) else "")
+                if val: val = colorize_address(val)
+
+            padding = " " * (col_widths[k] - get_visual_width(val))
+            if k in ["pkts", "bytes"] and not is_header: cells.append(f" {padding}{val} ")
+            else: cells.append(f" {val}{padding} ")
+        print(f"|{'|'.join(cells)}|")
+
+print(get_sep("="))
+print_row({}, is_header=True)
+print(get_sep("="))
+
+last_ctx = None
+for r in data_rows:
+    if last_ctx and r["ctx"] != last_ctx: print(get_sep("-"))
+    last_ctx = r["ctx"]
+    print_row(r)
+print(get_sep("="))
