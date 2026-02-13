@@ -5,13 +5,15 @@ import sys
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
+from rich import box
 
-# Initialize Rich Console
-console = Console()
+# Force a wide console width and ensure standard Unicode handling for dark mode terminals
+console = Console(width=160, legacy_windows=False)
 
 def extract_address(val):
     """Extract readable IP/CIDR from nftables expr right field."""
-    if isinstance(val, str): return [val]
+    if isinstance(val, str): 
+        return [val]
     if isinstance(val, dict):
         if "prefix" in val:
             p = val["prefix"]
@@ -24,16 +26,19 @@ def extract_address(val):
     return ["-"]
 
 def get_styled_target(target):
+    """Styling with fixed-width emoji presentation for perfect alignment."""
     if "ACCEPT" in target:
-        return Text(f"✅ {target}", style="bold green")
+        return Text("✅ ACCEPT", style="bold green")
     if "DROP" in target or "REJECT" in target:
-        return Text(f"❌ {target}", style="bold red")
-    return Text(f"↪️ {target}", style="yellow")
+        return Text("❌ DROP  ", style="bold red")
+    return Text(f"↪️  {target}", style="yellow")
 
 def get_styled_iface(iface):
-    if not iface or iface == "-": return Text("-")
+    """Styling for network interfaces with context emojis."""
+    if not iface or iface == "-": 
+        return Text("-")
     if "tailscale" in iface:
-        return Text(f"🕵️ {iface}", style="cyan")
+        return Text(f"🕵️  {iface}", style="cyan")
     if "lo" in iface:
         return Text(f"🔄 {iface}", style="blue")
     if "br-" in iface or "docker" in iface:
@@ -48,16 +53,21 @@ except Exception as e:
     console.print(f"[bold red]Error fetching nftables ruleset:[/bold red] {e}")
     sys.exit(1)
 
-# Initialize Table
-table = Table(title="🔥 Firewall Rules (nftables)", header_style="bold magenta", show_lines=True)
+# Initialize Table with heavy simplified lines for dark mode readability
+table = Table(
+    title="🔥 Firewall Rules (nftables)", 
+    header_style="bold magenta", 
+    box=box.SIMPLE_HEAVY, 
+    show_lines=False,
+    expand=False,
+    pad_edge=False
+)
 
 columns = ["Num", "Pkts", "Bytes", "Target", "Prot", "Opt", "In", "Out", 
            "Source", "Destination", "Chain", "Table", "Family"]
 
 for col in columns:
-    table.add_column(col)
-
-last_group = None
+    table.add_column(col, justify="left", no_wrap=False)
 
 # Process each rule
 for item in ruleset.get("nftables", []):
@@ -65,15 +75,15 @@ for item in ruleset.get("nftables", []):
     if not rule:
         continue
 
-    # Data extraction logic
+    # Data extraction
     num = str(rule.get("handle", "-"))
     pkts = str(0); bytes_ = str(0); target = "-"; prot = "-"; opt = "-"
     in_if = "-"; out_if = "-"; src = []; dst = []
 
     for expr in rule.get("expr", []):
         if "counter" in expr:
-            pkts = str(expr["counter"].get("packets", 0))
-            bytes_ = str(expr["counter"].get("bytes", 0))
+            pkts = f"{expr['counter'].get('packets', 0):,}"
+            bytes_ = f"{expr['counter'].get('bytes', 0):,}"
         if "jump" in expr: target = str(expr["jump"].get("target", "-"))
         if "accept" in expr: target = "ACCEPT"
         if "reject" in expr: target = "REJECT"
