@@ -58,12 +58,28 @@ v_echo "    Configuring FORWARD chain (Least Privilege)..."
 iptables -P FORWARD DROP
 iptables -F FORWARD
 
-# Allow established traffic back into containers
+# --------------------------------------------------
+# CRITICAL: Re-hook Docker chains into FORWARD
+# --------------------------------------------------
+v_echo "    # Hook Docker chains into FORWARD"
+iptables -C FORWARD -j DOCKER-USER 2>/dev/null || iptables -I FORWARD 1 -j DOCKER-USER
+iptables -C FORWARD -j DOCKER-FORWARD 2>/dev/null || iptables -I FORWARD 2 -j DOCKER-FORWARD
+
+# --------------------------------------------------
+# Allow return traffic
+# --------------------------------------------------
 iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-# Allow Docker containers to initiate outbound connections (DNS/ACME)
-iptables -A FORWARD -s "$GHOST_NET_V4" -j ACCEPT
-iptables -A FORWARD -s "$DOCKER_V4_SUBNET" -j ACCEPT
+# --------------------------------------------------
+# Allow containers outbound to the internet
+# BUT prevent container-to-container lateral movement
+# --------------------------------------------------
+
+# Allow containers to reach non-docker destinations
+iptables -A FORWARD -s "$DOCKER_V4_SUBNET" ! -d "$DOCKER_V4_SUBNET" -j ACCEPT
+
+# Explicitly block lateral container movement
+iptables -A FORWARD -s "$DOCKER_V4_SUBNET" -d "$DOCKER_V4_SUBNET" -j DROP
 
 # DOCKER-USER Chain
 v_echo "    Configuring DOCKER-USER chain..."
@@ -192,8 +208,8 @@ v_echo "Firewall applied with Docker Forwarding restricted to local subnets."
 
 SERVICE_CONTENT = f"""[Unit]
 Description=Custom Iptables Firewall with Docker and Tailscale Support
-After=network-online.target tailscaled.service
-Wants=network-online.target
+After=network-online.target tailscaled.service docker.service
+Wants=network-online.target docker.service
 
 [Service]
 Type=oneshot
