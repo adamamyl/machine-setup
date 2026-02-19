@@ -38,7 +38,7 @@ GHOST_NET_V4="172.18.0.0/16"    # Specific subnet seen in your nftables logs
 
 # Monitoring
 MUNIN_V4="93.93.128.100"
-MUNIN_V6="2a00:1098:0:80:1000::100"
+MUNIN_V6=("2a00:1098:0:80:1000::100")
 MUNIN_PORT="4949"
 
 TCP_ALLOWED=(80 443)
@@ -167,7 +167,7 @@ done
 
 # Mythic Monitoring
 v_echo "    # Mythic's Munin ipv6"
-for host in "${MUNIN_V46[@]}"; do
+for host in "${MUNIN_V6[@]}"; do
     ip6tables -A INPUT -s "$host" -p tcp --dport "${MUNIN_PORT}" -j ACCEPT
 done
 
