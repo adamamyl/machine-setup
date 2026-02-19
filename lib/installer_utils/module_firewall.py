@@ -36,6 +36,11 @@ TRUSTED_V6=("$TAILSCALE_V6")
 DOCKER_V4_SUBNET="172.16.0.0/12" # Broad range covering standard Docker pools
 GHOST_NET_V4="172.18.0.0/16"    # Specific subnet seen in your nftables logs
 
+# Monitoring
+MUNIN_V4="93.93.128.100"
+MUNIN_V6="2a00:1098:0:80:1000::100"
+MUNIN_PORT="4949"
+
 TCP_ALLOWED=(80 443)
 UDP_ALLOWED=()
 SMTP_PORTS=(25 465 587)
@@ -104,6 +109,12 @@ for ip in "${TRUSTED_V4[@]}"; do
     iptables -A INPUT -s "$ip" -j ACCEPT
 done
 
+# Mythic Monitoring
+v_echo "    # Mythic's Munin"
+for host in "${MUNIN_V4}"; do
+    iptables -A INPUT -s "$host" -p tcp --dport "${MUNIN_PORT}" -j ACCEPT
+done
+    
 # Public Services
 v_echo "    # Public Services"
 for port in "${TCP_ALLOWED[@]}"; do
@@ -152,6 +163,12 @@ ip6tables -A INPUT -p ipv6-icmp -j ACCEPT
 v_echo "    # allow-listing trusted v6 addresses"
 for ip6 in "${TRUSTED_V6[@]}"; do
     ip6tables -A INPUT -s "$ip6" -j ACCEPT
+done
+
+# Mythic Monitoring
+v_echo "    # Mythic's Munin ipv6"
+for host in "${MUNIN_V46[@]}"; do
+    ip6tables -A INPUT -s "$host" -p tcp --dport "${MUNIN_PORT}" -j ACCEPT
 done
 
 # Allow tcp traffic
