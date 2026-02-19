@@ -192,8 +192,8 @@ v_echo "Firewall applied with Docker Forwarding restricted to local subnets."
 
 SERVICE_CONTENT = f"""[Unit]
 Description=Custom Iptables Firewall with Docker and Tailscale Support
-After=network-online.target tailscaled.service
-Wants=network-online.target
+After=network-online.target tailscaled.service docker.service
+Wants=network-online.target docker.service
 
 [Service]
 Type=oneshot
