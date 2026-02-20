@@ -15,6 +15,13 @@ BG_GREEN = "\033[48;5;114;30m"  # Sage (ACCEPT)
 BG_RED   = "\033[48;5;167;30m"  # Coral (DROP/REJECT)
 BG_YELL  = "\033[48;5;186;30m"  # Sand (JUMP)
 
+# Port Pill Styles
+P_SSH   = "\033[48;5;93;38;5;255m"  # Violet background, white text
+P_WEB   = "\033[48;5;114;38;5;16m"   # Light Green background, dark text
+P_INFRA = "\033[48;5;117;38;5;16m"   # Cyan background, dark text
+P_HIGH  = "\033[48;5;238;38;5;250m"  # Dark Grey background, light text
+P_DEF   = "\033[48;5;33;38;5;255m"   # Blue background, white text
+
 # Interface/Context Background Pills
 BG_CYAN  = "\033[48;5;117;30m"  # Sky Blue (Tailscale)
 BG_BLUE  = "\033[48;5;111;30m"  # Cornflower (Loopback)
@@ -98,6 +105,20 @@ def colorize_address(addr):
     except: pass
     return f"{C_IP}{addr}{C_RESET}"
 
+def colorize_port(port):
+    """Formats a port number into a styled pill."""
+    if port == "-": return port
+    try:
+        p = int(port)
+        if p == 22: color = P_SSH
+        elif p in [80, 443]: color = P_WEB
+        elif p in [53, 123]: color = P_INFRA
+        elif p >= 1024: color = P_HIGH
+        else: color = P_DEF
+        return f"{color} {p} {C_RESET}"
+    except:
+        return port
+
 def get_row_labels(target, in_if):
     if "ACCEPT" in target: t_label = f"{BG_GREEN} OK {C_RESET}" 
     elif "DROP" in target or "REJECT" in target: t_label = f"{BG_RED} !! {C_RESET}"   
@@ -115,8 +136,8 @@ try:
 except Exception as e:
     print(f"Error: {e}"); sys.exit(1)
 
-columns = ["num", "stat", "pkts", "bytes", "target", "in_if", "src", "dst", "chain", "table", "family"]
-headers = ["NUM", "STAT", "PKTS", "BYTES", "TARGET", "IN", "SOURCE", "DESTINATION", "CHAIN", "TABLE", "FAM"]
+columns = ["num", "stat", "pkts", "bytes", "target", "in_if", "src", "sport", "dst", "dport", "chain", "table", "family"]
+headers = ["NUM", "STAT", "PKTS", "BYTES", "TARGET", "IN", "SOURCE", "S-PORT", "DESTINATION", "D-PORT", "CHAIN", "TABLE", "FAM"]
 data_rows = []
 col_widths = {k: len(h) for k, h in zip(columns, headers)}
 
@@ -127,7 +148,7 @@ for item in ruleset.get("nftables", []):
         "num": f"{C_NUM}{rule.get('handle', '-')}{C_RESET}",
         "stat": get_row_labels("-", "-"), # Placeholder
         "pkts": format_num(0), "bytes": format_num(0),
-        "target": "-", "in_if": "-", "src": ["-"], "dst": ["-"],
+        "target": "-", "in_if": "-", "src": ["-"], "sport": "-", "dst": ["-"], "dport": "-",
         "chain": rule.get("chain", "-"), "table": rule.get("table", "-"), "family": rule.get("family", "-"),
         "ctx": (rule.get("chain"), rule.get("table"), rule.get("family"))
     }
@@ -146,6 +167,8 @@ for item in ruleset.get("nftables", []):
             f = l.get("payload", {}).get("field") or l.get("meta", {}).get("key")
             if f == "saddr": src_list.extend(extract_address(r))
             elif f == "daddr": dst_list.extend(extract_address(r))
+            elif f == "sport": row["sport"] = str(r)
+            elif f == "dport": row["dport"] = str(r)
             elif f == "iifname": row["in_if"] = str(r)
 
     row["stat"] = get_row_labels(row["target"], row["in_if"])
@@ -154,6 +177,8 @@ for item in ruleset.get("nftables", []):
     for k in columns:
         if k in ["src", "dst"]:
             for line in row[k]: col_widths[k] = max(col_widths[k], get_visual_width(line))
+        elif k in ["sport", "dport"]:
+            col_widths[k] = max(col_widths[k], get_visual_width(colorize_port(row[k])))
         else:
             col_widths[k] = max(col_widths[k], get_visual_width(str(row[k])))
     data_rows.append(row)
@@ -183,6 +208,7 @@ def print_row(data_dict, is_header=False):
                     val = f"{C_BOLD}{color}{val}{C_RESET}"
                 elif k == "chain": val = f"{C_DIM}{val}{C_RESET}"
                 elif k in ["src", "dst"]: val = colorize_address(val)
+                elif k in ["sport", "dport"]: val = colorize_port(val)
             else:
                 val = (src_raw[idx] if k == "src" and idx < len(src_raw) else dst_raw[idx] if k == "dst" and idx < len(dst_raw) else "")
                 if val: val = colorize_address(val)
