@@ -23,7 +23,7 @@ def setup_wolfcraig(exec_obj: Executor) -> None:
         GHOST_DOCKER_REPO,
     )
 
-    cmd = ["/usr/bin/python3", f"{WOLFCRAIG_REPO}/server_setup.py"]
+    cmd = ["uv", "run", "--project", WOLFCRAIG_REPO, "python3", f"{WOLFCRAIG_REPO}/server_setup.py"]
     if exec_obj.dry_run:
         cmd.append("--dry-run")
     if exec_obj.verbose:
