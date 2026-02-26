@@ -149,8 +149,19 @@ iptables -A INPUT -j REJECT
 
 # OUTPUT Chain
 v_echo "    Configuring OUTPUT chain..."
-# Block direct outbound SMTP 
-v_echo "    # Block direct outbound SMTP to enforce smarthost usage"
+
+# Detect primary outbound interface so Exim can deliver to external MX servers.
+DEFAULT_IFACE=$(ip route show default | awk '/default/ {print $5}' | head -1)
+
+# Allow outbound port 25 from the host itself (Exim MTA) and Docker relay subnet.
+# We are intentionally over-permissive for 172.16/12 — all Docker bridges live here.
+v_echo "    # Allow outbound SMTP from lo, primary interface ($DEFAULT_IFACE), and Docker ($DOCKER_V4_SUBNET)"
+iptables -A OUTPUT -o lo -p tcp --dport 25 -j ACCEPT
+[ -n "$DEFAULT_IFACE" ] && iptables -A OUTPUT -o "$DEFAULT_IFACE" -p tcp --dport 25 -j ACCEPT
+iptables -A OUTPUT -s "$DOCKER_V4_SUBNET" -p tcp --dport 25 -j ACCEPT
+
+# Block direct outbound SMTP from everything else (prevent spam bypass of Exim)
+v_echo "    # Block direct outbound SMTP from other sources"
 for port in "${SMTP_PORTS[@]}"; do
     iptables -A OUTPUT -p tcp --dport "$port" -j REJECT --reject-with tcp-reset
 done
