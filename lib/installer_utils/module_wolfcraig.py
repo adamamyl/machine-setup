@@ -5,7 +5,7 @@ from ..logger import log
 from .git_tools import clone_or_update_repo
 
 WOLFCRAIG_REPO = "/usr/local/src/wolfcraig"
-GHOST_DOCKER_REPO = "/usr/local/src/ghost-docker"
+GHOST_DOCKER_REPO = "/opt/ghost-docker"
 
 
 def setup_wolfcraig(exec_obj: Executor) -> None:
