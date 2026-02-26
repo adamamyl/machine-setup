@@ -149,6 +149,7 @@ iptables -A INPUT -j REJECT
 
 # OUTPUT Chain
 v_echo "    Configuring OUTPUT chain..."
+iptables -F OUTPUT
 
 # Detect primary outbound interface so Exim can deliver to external MX servers.
 DEFAULT_IFACE=$(ip route show default | awk '/default/ {print $5}' | head -1)
