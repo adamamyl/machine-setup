@@ -2,16 +2,15 @@
 import argparse
 import os
 import sys
-from typing import List, Dict, Any, Tuple
-import subprocess
+from typing import List, Tuple
 
 # Set up the internal module search path for relative imports
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 # Import core utilities
 from lib.constants import *
-from lib.logger import configure_logger, log, SUCCESS, log_module_start
-from lib.executor import Executor, EXEC, run_function_as_user
+from lib.logger import configure_logger, log, log_module_start
+from lib.executor import EXEC, run_function_as_user
 
 # Global default VM user (used for Docker setup and VM module)
 DEFAULT_VM_USER: str = "adam"
@@ -89,6 +88,83 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     group_vm.add_argument("--vm-force", action="store_true", dest="do_vm_force",
                           help="Bypass VM detection and force execution of VM setup steps.")
 
+    # --- Ollama + Open WebUI Options ---
+    group_ollama = parser.add_argument_group("Ollama + Open WebUI Options")
+    group_ollama.add_argument(
+        "--ollama",
+        action="store_true",
+        dest="do_ollama",
+        help="Install Ollama locally and deploy Open WebUI via Docker Compose.",
+    )
+    group_ollama.add_argument(
+        "--ollama-port",
+        type=int,
+        default=None,
+        dest="ollama_port",
+        help="Preferred host port for the Ollama API (default: 11434). "
+             "A free port is auto-selected if the preferred one is taken.",
+    )
+    group_ollama.add_argument(
+        "--webui-port",
+        type=int,
+        default=None,
+        dest="webui_port",
+        help="Preferred host port for Open WebUI (default: 3000). "
+             "A free port is auto-selected if the preferred one is taken.",
+    )
+    group_ollama.add_argument(
+        "--ollama-model",
+        type=str,
+        default=None,
+        dest="ollama_model",
+        help="Ollama model to pull after installation (default: ministral:3b). "
+             "Examples: llama3.2, qwen2.5-coder, phi4-mini.",
+    )
+    group_ollama.add_argument(
+        "--ollama-user",
+        type=str,
+        default=None,
+        dest="ollama_user",
+        help="System user that owns the compose stack (default: ollama-docker).",
+    )
+    group_ollama.add_argument(
+        "--ollama-open-path",
+        type=str,
+        default=None,
+        dest="ollama_open_path",
+        metavar="PATH",
+        help="Mount a host path read-write into the Open WebUI container at "
+             "/workspace/<dirname> and open an interactive shell there. "
+             "Example: --ollama-open-path ~/projects/machine-setup",
+    )
+    group_ollama.add_argument(
+        "--ollama-google-api-key",
+        type=str,
+        default=None,
+        dest="ollama_google_api_key",
+        metavar="KEY",
+        help="Google Programmable Search Engine API key (GOOGLE_PSE_API_KEY). "
+             "Enables web search in Open WebUI.",
+    )
+    group_ollama.add_argument(
+        "--ollama-google-cx",
+        type=str,
+        default=None,
+        dest="ollama_google_cx",
+        metavar="CX",
+        help="Google PSE engine ID / cx value (GOOGLE_PSE_ENGINE_ID).",
+    )
+    group_ollama.add_argument(
+        "--ollama-terminal",
+        type=str,
+        default=None,
+        dest="ollama_terminal_path",
+        metavar="PATH",
+        help="Open an interactive shell in a sibling Open WebUI container "
+             "with PATH bind-mounted at /workspace/<dirname>. "
+             "Example: --ollama-terminal ~/projects/machine-setup",
+    )
+
     # --- fake_le (self-signed tls certs for testing) Options ---
     group_fake_le_flags = parser.add_argument_group("Fake-LE Orchestration Options")
     group_fake_le_flags.add_argument("--fake-le-debug", action="store_true", dest="fake_le_debug", help="Pass --debug to the fake-le installer script.")
@@ -122,7 +198,7 @@ def main():
     EXEC.force = args.force # Propagate force flag for idempotency overrides
     
     # 3. Import Modules (required here for internal command lookup and execution)
-    from lib.installer_utils import module_docker, module_no2id, module_pseudohome, tailscale, user_mgmt, packages, virtmachine, vscode, tweaks, module_fake_le
+    from lib.installer_utils import module_docker, module_no2id, module_pseudohome, tailscale, user_mgmt, packages, virtmachine, vscode, tweaks, module_fake_le, module_ollama
     from lib.installer_utils.apt_tools import apt_autoremove
 
     log.info(f"Configuration: Dry Run={args.dry_run}, Quiet={args.quiet}, Verbose={args.verbose}, Force={args.force}")
@@ -164,13 +240,17 @@ def main():
         "no2id": args.do_no2id,
         "pseudohome": args.do_pseudohome,
         "fake_le": args.do_fake_le,
+        "ollama": args.do_ollama,
     }
-    
+
     if args.all:
         for key in tasks:
             tasks[key] = True
 
-    if not any(tasks.values()) and not args.do_vm:
+    # --ollama-terminal is a standalone action (no --ollama flag needed)
+    has_terminal_action = bool(getattr(args, "ollama_terminal_path", None))
+
+    if not any(tasks.values()) and not args.do_vm and not has_terminal_action:
         log.warning("No modules selected. Use --help for options.")
         return
         
@@ -218,10 +298,20 @@ def main():
         run_function_as_user(EXEC, "no2id-docker", "setup_no2id")
     
     # Local CA and TLS certs setup-a-tron
-    if tasks["fake_le"]: 
+    if tasks["fake_le"]:
         log_module_start("FAKE-LE ORCHESTRATION", EXEC)
         # Pass the entire 'args' object so the module can read all the new flags
         module_fake_le.setup_fake_le(EXEC, args)
+
+    # Ollama (local) + Open WebUI (Docker Compose)
+    if tasks["ollama"]:
+        log_module_start("OLLAMA + OPEN WEBUI", EXEC)
+        module_ollama.setup_ollama(EXEC, args)
+
+    # open-terminal: spin up a sibling container with an extra path bind-mounted
+    if has_terminal_action:
+        log_module_start("OLLAMA OPEN TERMINAL", EXEC)
+        module_ollama.open_terminal_with_path(EXEC, args.ollama_terminal_path)
 
     # 7. VM Setup
     if args.do_vm:
