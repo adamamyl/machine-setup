@@ -1,7 +1,8 @@
 import platform
 import os
+import pwd
 import shutil
-from typing import Tuple, Dict, Any
+from typing import Any, Dict
 from .logger import log
 
 OS: str = platform.system().lower()
@@ -29,6 +30,27 @@ def is_ubuntu_desktop() -> bool:
         return False
     
     return shutil.which("gnome-shell") is not None
+
+def get_real_user() -> str:
+    """
+    Return the username of the *real* (non-root) person running this script.
+
+    When the script is invoked via ``sudo``, the shell sets ``SUDO_USER`` to
+    the original caller.  We use that so that Homebrew (and other tools that
+    refuse to run as root) can be called as the correct user.
+
+    Falls back to the effective UID's pw entry if ``SUDO_USER`` is absent or
+    is itself root (i.e. someone did ``sudo su -`` before running).
+    """
+    sudo_user: str = os.environ.get("SUDO_USER", "")
+    if sudo_user and sudo_user != "root":
+        return sudo_user
+    # Fallback: whoever owns this process (may be root)
+    try:
+        return pwd.getpwuid(os.geteuid()).pw_name
+    except KeyError:
+        return "root"
+
 
 def platform_info() -> None:
     """Logs the detected platform information."""

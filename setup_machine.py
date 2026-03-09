@@ -17,11 +17,32 @@ DEFAULT_VM_USER: str = "adam"
 
 
 def require_root() -> None:
-    """Check if the script is run as root (UID 0)."""
+    """
+    Enforce root execution on Linux; warn (but continue) on macOS.
+
+    Homebrew explicitly refuses to run as root, so on macOS the script can
+    be invoked as a regular user.  Linux modules still need root for apt,
+    systemctl, useradd, etc., so we hard-exit there.
+    """
+    from lib.platform_utils import is_mac
     if os.geteuid() != 0:
-        log.critical("The orchestrator must be run as root. Please use 'sudo'.")
-        sys.exit(1)
-    log.info("Running as root.")
+        if is_mac:
+            log.warning(
+                "Not running as root.  Most modules work fine on macOS without "
+                "sudo (brew requires non-root).  If a module fails with a "
+                "permission error, try running it as your regular user."
+            )
+        else:
+            log.critical("The orchestrator must be run as root on Linux.  Use 'sudo'.")
+            sys.exit(1)
+    else:
+        if is_mac:
+            log.warning(
+                "Running as root on macOS.  Homebrew commands will be delegated "
+                "to the original user via SUDO_USER."
+            )
+        else:
+            log.info("Running as root.")
 
 
 def parse_args() -> Tuple[argparse.Namespace, List[str]]:
