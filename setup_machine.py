@@ -89,6 +89,8 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
                                help="Install Docker and add users to the docker group.")
     group_modules.add_argument("--cloud-init", action="store_true", dest="do_cloud_init",
                                help="Install system-level repos (post-cloud-init, etc.).")
+    group_modules.add_argument("--firewall", action="store_true", dest="do_firewall",
+                           help="Install iptables firewall script and systemd service.")
     
     # PRIVATE REPOS (Requires interactive key setup)
     group_modules.add_argument("--hwga", "--no2id", action="store_true", dest="do_no2id",
@@ -99,7 +101,10 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     # --- Fake-LE Module Flag ---
     group_modules.add_argument("--fake-le", action="store_true", dest="do_fake_le",
                                help="Run Docker Compose, Fake-LE cert generation, and orchestration.")
-    
+
+    group_modules.add_argument("--wolfcraig", action="store_true", dest="do_wolfcraig",
+                               help="Clone wolfcraig + ghost-docker and run server_setup.py.")
+
     # --- Virtual Machine Options ---
     group_vm = parser.add_argument_group("Virtual Machine Options")
     group_vm.add_argument("--vm", "--virtmachine", action="store_true", dest="do_vm",
@@ -219,7 +224,7 @@ def main():
     EXEC.force = args.force # Propagate force flag for idempotency overrides
     
     # 3. Import Modules (required here for internal command lookup and execution)
-    from lib.installer_utils import module_docker, module_no2id, module_pseudohome, tailscale, user_mgmt, packages, virtmachine, vscode, tweaks, module_fake_le, module_ollama
+    from lib.installer_utils import module_docker, module_no2id, module_pseudohome, tailscale, user_mgmt, packages, virtmachine, vscode, tweaks, module_fake_le, module_wolfcraig, module_ollama
     from lib.installer_utils.apt_tools import apt_autoremove
 
     log.info(f"Configuration: Dry Run={args.dry_run}, Quiet={args.quiet}, Verbose={args.verbose}, Force={args.force}")
@@ -262,6 +267,8 @@ def main():
         "pseudohome": args.do_pseudohome,
         "fake_le": args.do_fake_le,
         "ollama": args.do_ollama,
+        "firewall": args.do_firewall,
+        "wolfcraig": args.do_wolfcraig,
     }
 
     if args.all:
@@ -308,6 +315,12 @@ def main():
         log_module_start("TAILSCALE", EXEC)
         tailscale.install_tailscale(EXEC)
         tailscale.ensure_tailscale_strict(EXEC)
+    
+    # After Tailscale, before Private User Repos
+    if tasks["firewall"]:
+        from lib.installer_utils import module_firewall
+        log_module_start("FIREWALL SETUP", EXEC)
+        module_firewall.setup_firewall(EXEC)
 
     # Private User Repositories
     if tasks["pseudohome"]:
@@ -318,6 +331,10 @@ def main():
         log_module_start("NO2ID SETUP (USER: NO2ID-DOCKER)", EXEC)
         run_function_as_user(EXEC, "no2id-docker", "setup_no2id")
     
+    if tasks["wolfcraig"]:
+        log_module_start("WOLFCRAIG SETUP", EXEC)
+        module_wolfcraig.setup_wolfcraig(EXEC)
+
     # Local CA and TLS certs setup-a-tron
     if tasks["fake_le"]:
         log_module_start("FAKE-LE ORCHESTRATION", EXEC)

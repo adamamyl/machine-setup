@@ -1,7 +1,7 @@
 import shutil
 import platform
 import os
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 import subprocess
 
 from ..executor import Executor
@@ -9,6 +9,24 @@ from ..logger import log
 from ..constants import DOCKER_DEPS, DOCKER_PKGS
 from .apt_tools import apt_install, ensure_apt_repo
 from .user_mgmt import add_user_to_group
+
+def _get_os_release() -> Dict[str, str]:
+    """
+    Parses /etc/os-release into a dictionary natively.
+    Replaces brittle shell 'grep/cut/tr' with robust Python string matching.
+    """
+    info = {}
+    try:
+        if os.path.exists("/etc/os-release"):
+            with open("/etc/os-release") as f:
+                for line in f:
+                    if "=" in line:
+                        key, value = line.rstrip().split("=", 1)
+                        # Remove surrounding quotes often found in these files
+                        info[key] = value.strip('"')
+    except Exception as e:
+        log.error(f"Failed to read /etc/os-release: {e}")
+    return info
 
 def _remove_old_docker(exec_obj: Executor) -> None:
     """
@@ -48,7 +66,12 @@ def _remove_old_docker(exec_obj: Executor) -> None:
 def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None:
     """
     Installs Docker packages, starts the service, and adds users to the 'docker' group.
+    Supports both Ubuntu and Debian automatically.
     """
+    # Safeguard for macOS
+    if platform.system().lower() == "darwin":
+        log.warning("Docker Engine installation is not supported on macOS via this orchestrator.")
+        return
     
     if shutil.which("docker"):
         log.success("Docker binary detected, skipping installation steps.")
@@ -62,32 +85,33 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
         # DOCKER_DEPS includes ca-certificates and lsb-release
         apt_install(exec_obj, DOCKER_DEPS)
 
+        # 1. Detect OS details using Python dictionary matching
+        os_info = _get_os_release()
+        os_id = os_info.get("ID")  # e.g., 'ubuntu' or 'debian'
+        codename = os_info.get("VERSION_CODENAME")  # e.g., 'noble' or 'bookworm'
+        
+        if not os_id or not codename:
+            log.critical("Could not detect OS ID or Codename from /etc/os-release. Aborting Docker setup.")
+            raise RuntimeError("Cannot proceed without distribution details.")
+
+        log.info(f"Detected OS: {os_id}, Codename: {codename}")
+
         keyrings_dir = "/etc/apt/keyrings"
-        docker_gpg_path = os.path.join(keyrings_dir, "docker.asc") # Official script uses docker.asc
+        docker_gpg_path = os.path.join(keyrings_dir, "docker.gpg") # Modern standard uses .gpg binary
         list_file = "/etc/apt/sources.list.d/docker.list"
         
         exec_obj.run(f"mkdir -p {keyrings_dir}", force_sudo=True)
         
         if not os.path.exists(docker_gpg_path):
-            log.info("Downloading and adding Docker GPG key.")
-            # Note: We use docker.asc file name for consistency with Docker's script output
-            curl_cmd = f"curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o {docker_gpg_path}"
+            log.info(f"Downloading and adding Docker GPG key for {os_id}.")
+            # Note: We use gpg --dearmor to ensure a binary .gpg file for /etc/apt/keyrings compatibility
+            curl_cmd = f"curl -fsSL https://download.docker.com/linux/{os_id}/gpg | gpg --dearmor -o {docker_gpg_path}"
             exec_obj.run(curl_cmd, force_sudo=True)
             # Ensure proper read permissions for apt
             exec_obj.run(f"chmod a+r {docker_gpg_path}", force_sudo=True)
         else:
             log.info("Docker GPG key already exists.")
 
-        # 1. Get Distribution Codename robustly
-        try:
-            result = exec_obj.run("lsb_release -cs", check=True, run_quiet=True) 
-            codename = result.stdout.strip()
-            log.info(f"Detected distribution codename: {codename}")
-        except Exception as e:
-            log.critical("Failed to determine Linux distribution codename (lsb_release -cs failed). Aborting Docker setup.")
-            log.debug(f"lsb_release error: {e}")
-            raise RuntimeError("Cannot proceed without distribution codename.")
-            
         arch = platform.machine()
         
         # --- FIX: Architecture Correction (aarch64 -> arm64) ---
@@ -96,11 +120,9 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
             display_arch = 'arm64'
         else:
             display_arch = arch
-            
-        effective_codename = codename # Trust the detected codename
 
-        # 2. Interpolate the correct codename and arch into the repository line
-        repo_line = f"deb [arch={display_arch} signed-by={docker_gpg_path}] https://download.docker.com/linux/ubuntu {effective_codename} stable"
+        # 2. Interpolate the correct ID, codename and arch into the repository line
+        repo_line = f"deb [arch={display_arch} signed-by={docker_gpg_path}] https://download.docker.com/linux/{os_id} {codename} stable"
         
         log.info(f"Using APT repository line: {repo_line}")
         ensure_apt_repo(exec_obj, list_file, repo_line)
