@@ -63,6 +63,7 @@ from ..constants import (
     WEBUI_PORT_SEARCH_MAX,
     OLLAMA_DEFAULT_MODEL,
     OLLAMA_PERMA_MOUNTS,
+    TOOLS_DIR,
 )
 from .user_mgmt import add_user_to_group
 from .module_docker import run_docker_compose, are_docker_services_running
@@ -481,8 +482,29 @@ def _print_access_info(webui_port: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# open-terminal — expose any host path inside the container
+# open-terminal helper — install to PATH + expose any host path in container
 # ---------------------------------------------------------------------------
+
+def install_open_terminal_helper(exec_obj: Executor) -> None:
+    """
+    Install ``ollama-open-terminal`` to ``/usr/local/bin/`` so it is
+    available system-wide without a full path.
+
+    Source: ``tools/ollama-open-terminal.sh`` in this repo.
+    Destination: ``/usr/local/bin/ollama-open-terminal`` (no ``.sh``).
+    Idempotent — skips if the destination is already up-to-date.
+    """
+    src = os.path.join(TOOLS_DIR, "ollama-open-terminal.sh")
+    dst = "/usr/local/bin/ollama-open-terminal"
+
+    if not os.path.isfile(src):
+        log.warning(f"Helper script not found at {src} — skipping install.")
+        return
+
+    import shutil as _shutil
+    _shutil.copy2(src, dst)
+    os.chmod(dst, 0o755)  # nosec B103 — intentional: system CLI tool needs a+x
+    log.success(f"Installed: {dst}")
 
 def open_terminal_with_path(exec_obj: Executor, host_path: str) -> None:
     """
@@ -623,8 +645,9 @@ def setup_ollama(exec_obj: Executor, args) -> None:
     4. Linux only: ensure compose stack user exists + is in docker group.
     5. Write docker-compose.yml + .env.
     6. Bring the Open WebUI compose stack up.
-    7. Pull the requested model.
-    8. Print Google PSE setup guide.
+    7. Install ``ollama-open-terminal`` to ``/usr/local/bin/``.
+    8. Pull the requested model.
+    9. Print Google PSE setup guide.
     """
     log.info(f"Starting Ollama + Open WebUI setup ({'macOS' if is_mac else 'Linux'})…")
 
@@ -682,11 +705,14 @@ def setup_ollama(exec_obj: Executor, args) -> None:
         force=exec_obj.force,
     )
 
-    # --- 7. Pull model ---
+    # --- 7. Install open-terminal helper to /usr/local/bin ---
+    install_open_terminal_helper(exec_obj)
+
+    # --- 8. Pull model ---
     model: str = getattr(args, "ollama_model", None) or OLLAMA_DEFAULT_MODEL
     pull_ollama_model(exec_obj, model)
 
-    # --- 8. Instructions ---
+    # --- 9. Instructions ---
     print_google_pse_instructions()
 
     log.success("Ollama + Open WebUI setup complete.")
