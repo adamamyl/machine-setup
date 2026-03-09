@@ -75,12 +75,43 @@ DOCKER_DEPS: List[str] = ["curl", "gnupg", "lsb-release", "ca-certificates"]
 
 # Full modern Docker suite (Matching successful installation log)
 DOCKER_PKGS: List[str] = [
-    "docker-ce", 
-    "docker-ce-cli", 
-    "containerd.io", 
+    "docker-ce",
+    "docker-ce-cli",
+    "containerd.io",
     "docker-compose-plugin",
     "docker-buildx-plugin",
     "docker-ce-rootless-extras",
+    "docker-model-plugin",
+]
+
+# --- Ollama / OpenWebUI Configuration ---
+
+# Directory where the docker-compose stack and .env are written
+OLLAMA_STACK_DIR: str = "/opt/ollama-webui"
+
+# The system user that owns the compose stack
+OLLAMA_USER: str = "ollama-docker"
+
+# Default Ollama API port (local, on the host)
+OLLAMA_DEFAULT_PORT: int = 11434
+
+# Default OpenWebUI port (host side; container always listens on 8080)
+WEBUI_DEFAULT_PORT: int = 3000
+
+# Port-search range when the preferred port is already taken
+OLLAMA_PORT_SEARCH_MIN: int = 11400
+OLLAMA_PORT_SEARCH_MAX: int = 11500
+WEBUI_PORT_SEARCH_MIN: int = 3001
+WEBUI_PORT_SEARCH_MAX: int = 3099
+
+# Default model to pull after Ollama is installed (lightweight, fast)
+OLLAMA_DEFAULT_MODEL: str = "ministral:3b"
+
+# Permanent host paths bind-mounted read-only into the OpenWebUI container.
+# These are expanded at runtime relative to the real user's HOME.
+OLLAMA_PERMA_MOUNTS: List[str] = [
+    "pseudohome",
+    "projects",
 ]
 
 # Firewall module:
