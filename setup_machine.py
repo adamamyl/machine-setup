@@ -107,6 +107,21 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     group_modules.add_argument("--wolfcraig", action="store_true", dest="do_wolfcraig",
                                help="Clone wolfcraig + ghost-docker and run server_setup.py.")
 
+    # PERSONAL GITHUB REPOS (public)
+    group_personal = parser.add_argument_group("Personal GitHub Repos")
+    group_personal.add_argument(
+        "--personal-repos", action="store_true", dest="do_personal_repos",
+        help="Clone/update all personal GitHub repos (traefik-proxy, dracula)."
+    )
+    group_personal.add_argument(
+        "--traefik-proxy", action="store_true", dest="do_traefik_proxy",
+        help="Clone/update adamamyl/traefik-proxy."
+    )
+    group_personal.add_argument(
+        "--dracula", action="store_true", dest="do_dracula",
+        help="Clone/update adamamyl/dracula."
+    )
+
     # --- Virtual Machine Options ---
     group_vm = parser.add_argument_group("Virtual Machine Options")
     group_vm.add_argument("--vm", "--virtmachine", action="store_true", dest="do_vm",
@@ -238,7 +253,7 @@ def main() -> None:
     # 3. Import Modules (required here for internal command lookup and execution)
     from lib.installer_utils import (  # noqa: E402
         module_docker, module_fake_le, module_no2id, module_ollama,
-        module_pseudohome, module_wolfcraig,
+        module_personal_repos, module_pseudohome, module_wolfcraig,
         tailscale, user_mgmt, packages, virtmachine, vscode, tweaks,
     )
     from lib.installer_utils.apt_tools import apt_autoremove
@@ -288,6 +303,9 @@ def main() -> None:
         "ollama": args.do_ollama,
         "firewall": args.do_firewall,
         "wolfcraig": args.do_wolfcraig,
+        "personal_repos": args.do_personal_repos,
+        "traefik_proxy": args.do_traefik_proxy,
+        "dracula": args.do_dracula,
     }
 
     if args.all:
@@ -353,6 +371,18 @@ def main() -> None:
     if tasks["wolfcraig"]:
         log_module_start("WOLFCRAIG SETUP", EXEC)
         module_wolfcraig.setup_wolfcraig(EXEC)
+
+    # Personal GitHub Repos (public)
+    if tasks["personal_repos"]:
+        log_module_start("PERSONAL REPOS (ALL)", EXEC)
+        module_personal_repos.setup_all_personal_repos(EXEC)
+    else:
+        if tasks["traefik_proxy"]:
+            log_module_start("PERSONAL REPOS: TRAEFIK-PROXY", EXEC)
+            module_personal_repos.setup_traefik_proxy(EXEC)
+        if tasks["dracula"]:
+            log_module_start("PERSONAL REPOS: DRACULA", EXEC)
+            module_personal_repos.setup_dracula(EXEC)
 
     # Local CA and TLS certs setup-a-tron
     if tasks["fake_le"]:
