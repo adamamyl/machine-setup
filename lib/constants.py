@@ -119,6 +119,7 @@ OLLAMA_PERMA_MOUNTS: List[str] = [
 PERSONAL_GITHUB_REPOS: Dict[str, str] = {
     "traefik-proxy": "https://github.com/adamamyl/traefik-proxy.git",
     "dracula": "https://github.com/adamamyl/dracula.git",
+    "docker-dns-reso": "git@github.com:adamamyl/docker-dns-reso.git",
 }
 
 # Firewall module:
