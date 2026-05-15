@@ -1,12 +1,14 @@
 import os
-import sys
-import platform
-from typing import List, Dict, Optional
 from ..executor import Executor
 from ..logger import log
 from ..constants import HWGA_REPOS, ROOT_SRC_CHECKOUT, SYSTEM_REPOS
 from .user_mgmt import users_to_groups_if_needed, create_if_needed_ssh_dir
-from .git_tools import set_homedir_perms_recursively, set_ssh_perms, clone_or_update_private_repo_with_key_check, _configure_repo_ssh_key
+from .git_tools import (
+    _configure_repo_ssh_key,
+    clone_or_update_private_repo_with_key_check,
+    set_homedir_perms_recursively,
+    set_ssh_perms,
+)
 from .repo_utils import _create_if_needed_ssh_key, _dotenv_sync_if_needed
 
 
@@ -42,7 +44,7 @@ def setup_no2id(exec_obj: Executor) -> None:
         ssh_dir = create_if_needed_ssh_dir(exec_obj, user)
         
         # This function now guarantees the key exists and has strict permissions
-        key_is_new = _create_if_needed_ssh_key(exec_obj, user, ssh_dir, repo_name)
+        _create_if_needed_ssh_key(exec_obj, user, ssh_dir, repo_name)
         
         # Ensure the .ssh directory itself has strict permissions before use
         set_ssh_perms(exec_obj, user, ssh_dir)
@@ -76,7 +78,10 @@ def setup_no2id(exec_obj: Executor) -> None:
         
         # --- LOGIC: Skip installer requiring arguments ---
         if repo_name == "fake-le" and installer == "fake-le-for-no2id-docker-installer":
-            log.info(f"Skipping installer {installer} for {repo_name}. This is now handled by the --fake-le module.")
+            log.info(
+                f"Skipping installer {installer} for {repo_name}. "
+                "Handled by the --fake-le module."
+            )
             continue # Skip execution for this specific module
         
         # Execute all other installers
@@ -118,7 +123,10 @@ def install_system_repos(exec_obj: Executor) -> None:
         if os.path.exists(install_path) and os.access(install_path, os.X_OK):
             log.info(f"Running {installer} for {repo_name}...")
             # Run inside the repo directory (as root)
-            exec_obj.run(f"pushd '{dest_dir}' >/dev/null && './{installer}' && popd >/dev/null", force_sudo=True)
+            exec_obj.run(
+                f"pushd '{dest_dir}' >/dev/null && './{installer}' && popd >/dev/null",
+                force_sudo=True,
+            )
             log.success(f"Installer completed for {repo_name}.")
         else:
             log.warning(f"Installer {install_path} missing or not executable, skipping.")

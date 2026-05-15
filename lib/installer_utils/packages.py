@@ -28,6 +28,9 @@ def install_update_all_packages(exec_obj: Executor) -> None:
     
     install_path = os.path.join(dest_dir, installer)
     if os.path.exists(install_path) and os.access(install_path, os.X_OK):
-         exec_obj.run(f"pushd '{dest_dir}' >/dev/null && './{installer}' && popd >/dev/null", force_sudo=True)
+        exec_obj.run(
+            f"pushd '{dest_dir}' >/dev/null && './{installer}' && popd >/dev/null",
+            force_sudo=True,
+        )
     else:
         log.warning(f"Installer {install_path} missing or not executable, skipping.")

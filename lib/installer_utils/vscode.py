@@ -20,12 +20,18 @@ def install_vscode(exec_obj: Executor) -> None:
     
     if not os.path.exists(gpg_path):
         log.info("Adding Microsoft GPG key for VSCode.")
-        curl_cmd = f"wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee {gpg_path}"
+        curl_cmd = (
+            "wget -qO- https://packages.microsoft.com/keys/microsoft.asc "
+            f"| gpg --dearmor | tee {gpg_path}"
+        )
         exec_obj.run(curl_cmd, force_sudo=True)
     else:
         log.info("VSCode GPG key already exists.")
         
-    repo_line = f"deb [arch=amd64 signed-by={gpg_path}] https://packages.microsoft.com/repos/code stable main"
+    repo_line = (
+        f"deb [arch=amd64 signed-by={gpg_path}] "
+        "https://packages.microsoft.com/repos/code stable main"
+    )
     ensure_apt_repo(exec_obj, list_file, repo_line)
 
     apt_install(exec_obj, ["code"])

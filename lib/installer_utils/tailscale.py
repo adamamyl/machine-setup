@@ -53,11 +53,13 @@ def ensure_tailscale_connected(exec_obj: Executor) -> bool:
                 return True
             else:
                 # Should not happen if check=True succeeded, but acts as a safeguard
-                log.info(f"Tailscale IP found but seems invalid. Proceeding to 'up'.")
+                log.info("Tailscale IP found but seems invalid. Proceeding to 'up'.")
 
-        except subprocess.CalledProcessError: 
-            # This is the expected failure if the service is up but not logged in, or the daemon is starting.
-            log.info(f"Tailscale IP check failed (service/login issue, Attempt {attempt + 1}/{MAX_RETRIES}). Proceeding to 'up'.")
+        except subprocess.CalledProcessError:
+            log.info(
+                f"Tailscale IP check failed (service/login issue, "
+                f"Attempt {attempt + 1}/{MAX_RETRIES}). Proceeding to 'up'."
+            )
             if attempt == MAX_RETRIES - 1:
                 break
             
@@ -75,10 +77,13 @@ def ensure_tailscale_connected(exec_obj: Executor) -> bool:
         try:
             # Run interactively to allow terminal I/O for URL and authentication.
             exec_obj.run(["tailscale", "up"], force_sudo=True, interactive=True)
-            # If 'up' succeeds, the loop will run the status check again, and it should succeed on the next iteration.
+            # On success, next iteration re-checks status.
             
         except subprocess.CalledProcessError as e:
-            log.error(f"Tailscale 'up' failed with exit code {e.returncode}. You may need to run it manually.")
+            log.error(
+                f"Tailscale 'up' failed with exit code {e.returncode}. "
+                "You may need to run it manually."
+            )
         except Exception as e:
             log.error(f"Tailscale 'up' failed unexpectedly: {e}")
             

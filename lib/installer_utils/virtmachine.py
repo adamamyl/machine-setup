@@ -1,7 +1,7 @@
 import shutil
 import os
 import subprocess
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 from ..executor import Executor
 from ..logger import log
 from ..constants import VM_PACKAGES, DEFAULT_VM_USER
@@ -9,7 +9,9 @@ from .apt_tools import apt_install
 
 # --- New Helper Function for ID Detection ---
 
-def _get_current_bindfs_ids(exec_obj: Executor, mount_point: str = "/mnt/utm") -> Tuple[Optional[str], Optional[str]]:
+def _get_current_bindfs_ids(
+    exec_obj: Executor, mount_point: str = "/mnt/utm"
+) -> Tuple[Optional[str], Optional[str]]:
     """
     Attempts to read the UID and GID of the mount point to find mismatched ownership.
     Returns (uid, gid) as strings, or (None, None) if unsuccessful.
@@ -18,7 +20,9 @@ def _get_current_bindfs_ids(exec_obj: Executor, mount_point: str = "/mnt/utm") -
     
     # We must ensure the mount is present before checking ownership.
     if not os.path.ismount(mount_point):
-        log.warning(f"Mount point {mount_point} is not yet mounted. Cannot determine UID/GID mismatch.")
+        log.warning(
+            f"Mount point {mount_point} is not yet mounted. Cannot determine UID/GID mismatch."
+        )
         return None, None
         
     # Get ownership of the mount point itself (using ls -nd)
@@ -31,14 +35,16 @@ def _get_current_bindfs_ids(exec_obj: Executor, mount_point: str = "/mnt/utm") -
         log.info(f"Detected UID/GID mismatch: {uid}:{gid}")
         return uid, gid
     except Exception as e:
-        log.warning(f"Could not reliably determine current UID/GID for bindfs mapping.")
+        log.warning("Could not reliably determine current UID/GID for bindfs mapping.")
         log.debug(f"Stat error: {e}")
         return None, None
 
 
 # --- Main Function ---
 
-def setup_virtmachine(exec_obj: Executor, vm_user: str = DEFAULT_VM_USER, force_detection: bool = False) -> None:
+def setup_virtmachine(
+    exec_obj: Executor, vm_user: str = DEFAULT_VM_USER, force_detection: bool = False
+) -> None:
     """Handles VM guest package installation, fstab setup, and bindfs remapping."""
     log.info("Starting virtual machine setup...")
     
@@ -49,11 +55,11 @@ def setup_virtmachine(exec_obj: Executor, vm_user: str = DEFAULT_VM_USER, force_
     # ... (VM detection logic remains the same, relies on --force if needed) ...
     if vm_type_check:
         try:
-            result = exec_obj.run("systemd-detect-virt 2>&1", check=False, quiet=True)
+            result = exec_obj.run("systemd-detect-virt 2>&1", check=False, run_quiet=True)
             vm_type = result.stdout.strip()
         except Exception:
-            pass
-            
+            log.debug("systemd-detect-virt unavailable; VM type unknown.")
+
     log.debug(f"systemd-detect-virt reported: '{vm_type}'")
             
     # 2. Check VM Status and Handle --vm-force
@@ -87,11 +93,18 @@ def setup_virtmachine(exec_obj: Executor, vm_user: str = DEFAULT_VM_USER, force_
 
     # 4. Handle NetworkManager/systemd-networkd conflict (unchanged)
     # The Executor still logs this command, but avoids the TypeError.
-    netman_enabled = exec_obj.run("systemctl is-enabled NetworkManager-wait-online.service").returncode == 0
-    networkd_enabled = exec_obj.run("systemctl is-enabled systemd-networkd-wait-online.service").returncode == 0
-    
+    netman_enabled = (
+        exec_obj.run("systemctl is-enabled NetworkManager-wait-online.service").returncode == 0
+    )
+    networkd_enabled = (
+        exec_obj.run("systemctl is-enabled systemd-networkd-wait-online.service").returncode == 0
+    )
+
     if netman_enabled and networkd_enabled:
-        log.warning("Both NetworkManager and systemd-networkd are enabled. Disabling systemd-networkd for stability.")
+        log.warning(
+            "Both NetworkManager and systemd-networkd are enabled. "
+            "Disabling systemd-networkd for stability."
+        )
         exec_obj.run("systemctl disable systemd-networkd.service", force_sudo=True)
 
     # 5. Ensure fstab entry for the *initial* mount exists (unchanged)
@@ -122,7 +135,7 @@ def setup_virtmachine(exec_obj: Executor, vm_user: str = DEFAULT_VM_USER, force_
     log.info("Running systemctl daemon-reload and network target restart.")
     exec_obj.run("systemctl daemon-reload", force_sudo=True)
 
-    # Determine which target to restart (network-fs.target is standard; remote-fs.target is fallback)
+    # network-fs.target is standard; remote-fs.target is fallback.
     target_fs = "network-fs.target"
     try:
         # Check if the primary target exists before restarting
@@ -138,8 +151,12 @@ def setup_virtmachine(exec_obj: Executor, vm_user: str = DEFAULT_VM_USER, force_
     mismatched_uid, mismatched_gid = _get_current_bindfs_ids(exec_obj, UTM_MOUNT)
 
     # Get the target user's local UID/GID (adam:adam is typically 1000:1000)
-    target_uid = subprocess.run(['id', '-u', vm_user], capture_output=True, text=True, check=True).stdout.strip()
-    target_gid = subprocess.run(['id', '-g', vm_user], capture_output=True, text=True, check=True).stdout.strip()
+    target_uid = subprocess.run(
+        ['id', '-u', vm_user], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    target_gid = subprocess.run(
+        ['id', '-g', vm_user], capture_output=True, text=True, check=True
+    ).stdout.strip()
 
     # 6c. Create user mount point
     exec_obj.run(f"mkdir -p {USER_MOUNT}", force_sudo=True)
@@ -155,7 +172,10 @@ def setup_virtmachine(exec_obj: Executor, vm_user: str = DEFAULT_VM_USER, force_
         log.warning("Using fallback bindfs map to 1000:1000 as IDs could not be confirmed.")
         map_string = f"map=1000/{target_uid}:@1000/@{target_gid}"
 
-    FSTAB_LINE_BINDFS = f"{UTM_MOUNT} {USER_MOUNT} fuse.bindfs {map_string},x-systemd.requires={UTM_MOUNT},_netdev,nofail,auto 0 0"
+    FSTAB_LINE_BINDFS = (
+        f"{UTM_MOUNT} {USER_MOUNT} fuse.bindfs "
+        f"{map_string},x-systemd.requires={UTM_MOUNT},_netdev,nofail,auto 0 0"
+    )
 
     # Check/add bindfs fstab entry (similar idempotency logic)
     bindfs_entry_exists = False
@@ -164,7 +184,7 @@ def setup_virtmachine(exec_obj: Executor, vm_user: str = DEFAULT_VM_USER, force_
             if any(FSTAB_LINE_BINDFS.strip() == line.strip() for line in f):
                 bindfs_entry_exists = True
     except Exception:
-        pass # Ignore
+        log.debug("Could not read fstab; assuming bindfs entry absent.")
 
     if bindfs_entry_exists:
         log.success("Bindfs fstab entry already present.")

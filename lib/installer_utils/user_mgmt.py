@@ -1,8 +1,7 @@
-import subprocess
 import os
-import shutil
-import hashlib
-from typing import List, Optional, Set
+import subprocess
+import tempfile
+from typing import List, Set
 from ..executor import Executor
 from ..logger import log
 from ..constants import USER_GITHUB_KEY_MAP # Required for key mapping
@@ -13,7 +12,9 @@ def require_user(exec_obj: Executor, user: str) -> bool:
     """Ensures a user exists, creating them with useradd -m if missing."""
     try:
         # id check is idempotent
-        subprocess.run(['id', user], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ['id', user], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         return True
     except subprocess.CalledProcessError:
         log.info(f"Creating user '{user}'...")
@@ -30,7 +31,12 @@ def add_user_to_group(exec_obj: Executor, user: str, group: str) -> None:
 
     # Check/create group (getent is idempotent check)
     try:
-        subprocess.run(['getent', 'group', group], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ['getent', 'group', group],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     except subprocess.CalledProcessError:
         log.info(f"Creating group '{group}'...")
         exec_obj.run(f"groupadd -f {group}", force_sudo=True)
@@ -57,7 +63,9 @@ def create_if_needed_ssh_dir(exec_obj: Executor, user: str) -> str:
     """Creates the user's .ssh directory with correct permissions and ownership (Idempotent)."""
     
     try:
-        homedir_result = subprocess.run(['getent', 'passwd', user], capture_output=True, text=True, check=True)
+        homedir_result = subprocess.run(
+            ['getent', 'passwd', user], capture_output=True, text=True, check=True
+        )
         homedir = homedir_result.stdout.strip().split(':')[5]
     except Exception as e:
         log.error(f"Failed to get homedir for {user}: {e}")
@@ -137,7 +145,10 @@ def install_mapped_ssh_keys(exec_obj: Executor, user: str) -> None:
             if result.returncode == 0 and result.stdout.strip():
                 all_downloaded_keys += result.stdout.strip() + "\n"
             else:
-                log.warning(f"Failed to fetch keys from {url} (Exit code {result.returncode} or no keys found).")
+                log.warning(
+                    f"Failed to fetch keys from {url} "
+                    f"(Exit code {result.returncode} or no keys found)."
+                )
         except Exception as e:
             log.error(f"Critical error during curl for {url}. Skipping this account.")
             log.debug(f"Curl error: {e}")
@@ -166,12 +177,10 @@ def install_mapped_ssh_keys(exec_obj: Executor, user: str) -> None:
         
     log.info(f"Writing updated and deduplicated authorized_keys for {user}...")
     
-    # Write the merged content to a temporary file
-    temp_final_file = "/tmp/final_authorized_keys"
-    with open(temp_final_file, 'w') as f:
-        f.write(final_content)
+    with tempfile.NamedTemporaryFile(mode='w', prefix='authorized_keys_', delete=False) as tmp:
+        tmp.write(final_content)
+        temp_final_file = tmp.name
 
-    # Move the temporary file into place using mv with root privilege
     exec_obj.run(f"mv \"{temp_final_file}\" \"{auth_keys}\"", force_sudo=True)
     
     # Fix permissions/ownership (Idempotent fix)

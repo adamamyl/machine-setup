@@ -1,6 +1,5 @@
 import os
 import shutil
-import subprocess
 from typing import List
 from ..executor import Executor
 from ..logger import log
@@ -36,7 +35,9 @@ def install_python_venv(exec_obj: Executor) -> None:
     if venv_tool:
         log.info("Using 'uv' for virtual environment management.")
         venv_tool_cmd = [venv_tool, 'venv', VENVDIR]
-        install_cmd = [venv_tool, 'pip', 'install', '-r', os.path.join(REPO_ROOT, "requirements.txt")]
+        install_cmd = [
+            venv_tool, 'pip', 'install', '-r', os.path.join(REPO_ROOT, "requirements.txt")
+        ]
     else:
         log.info("Using standard 'python3 -m venv' for virtual environment management.")
         venv_tool_cmd = [python_bin, '-m', 'venv', VENVDIR]

@@ -1,12 +1,16 @@
+import argparse
 import os
 import sys
-import subprocess
-from typing import List, Optional 
-from ..executor import Executor, run_function_as_user
+from typing import List, Optional
+from ..executor import Executor
 from ..logger import log
 from ..constants import ROOT_SRC_CHECKOUT
-from .module_docker import run_docker_compose, check_docker_volume_exists, are_docker_services_running
-from pathlib import Path # Required for Python script execution
+from pathlib import Path
+from .module_docker import (
+    are_docker_services_running,
+    check_docker_volume_exists,
+    run_docker_compose,
+)
 
 # Constants specific to this module
 NO2ID_USER = "no2id-docker"
@@ -24,7 +28,7 @@ def _get_ca_path_str(exec_obj: Executor) -> Optional[str]:
     Executes the cert generation script with --table-only to ensure CA exists 
     and returns its path.
     """
-    log.info(f"Running CA generator script to retrieve CA path...")
+    log.info("Running CA generator script to retrieve CA path...")
     
     try:
         # NOTE: Run as the user who owns the Git repo (no2id-docker)
@@ -60,7 +64,7 @@ def _get_ca_path_str(exec_obj: Executor) -> Optional[str]:
         return None
 
 # --- Main setup_fake_le function ---
-def setup_fake_le(exec_obj: Executor, args) -> None: # Pass the full args object
+def setup_fake_le(exec_obj: Executor, args: argparse.Namespace) -> None:
     """
     Orchestrates the Docker Compose startup, cert generation, and container restart.
     """
@@ -75,7 +79,7 @@ def setup_fake_le(exec_obj: Executor, args) -> None: # Pass the full args object
         log.critical(f"Cert generation script not found at {CERT_GEN_SCRIPT}. Aborting.")
         sys.exit(1)
         
-    if args.do_fake_le_ca_install and not Path(CA_INSTALLER_SCRIPT).is_file(): # Use Path for file check
+    if args.do_fake_le_ca_install and not Path(CA_INSTALLER_SCRIPT).is_file():
         log.critical(f"CA installer script not found at {CA_INSTALLER_SCRIPT}. Aborting.")
         sys.exit(1)
         
@@ -97,12 +101,14 @@ def setup_fake_le(exec_obj: Executor, args) -> None: # Pass the full args object
             run_docker_compose(exec_obj, NO2ID_USER, HWGA_DIR, "up -d --wait")
             log.success("Docker Compose services started and stable (Nginx may be failing).")
         except Exception as e:
-            log.warning(f"Docker Compose failed to start stably. Continuing to check volume.")
+            log.warning("Docker Compose failed to start stably. Continuing to check volume.")
             log.debug(f"Docker Compose error: {e}")
 
     # 2. Check for the volume existence
     if not check_docker_volume_exists(exec_obj, CERTBOT_VOLUME):
-        log.critical(f"Required Docker volume '{CERTBOT_VOLUME}' does not exist after startup. Cannot proceed.")
+        log.critical(
+            f"Required Docker volume '{CERTBOT_VOLUME}' does not exist after startup."
+        )
         return
 
     # 3. Execute the certificate generation script (Python Script Call)
@@ -118,7 +124,7 @@ def setup_fake_le(exec_obj: Executor, args) -> None: # Pass the full args object
         
         log.success("Fake-LE certificates successfully generated.")
     except Exception as e:
-        log.critical(f"Certificate generation script failed execution. Cannot restart Nginx.")
+        log.critical("Certificate generation script failed execution. Cannot restart Nginx.")
         log.debug(f"Cert generation error: {e}")
         return
 
@@ -133,11 +139,11 @@ def setup_fake_le(exec_obj: Executor, args) -> None: # Pass the full args object
             ca_install_cmd = ["python3", CA_INSTALLER_SCRIPT, ca_path]
             
             try:
-                # We run this as root because the installer script handles its own sudo inside its main function
+                # Runs as root; installer handles internal privilege escalation.
                 exec_obj.run(ca_install_cmd, check=True, interactive=True)
                 log.success("System-wide CA installation complete.")
             except Exception as e:
-                log.error(f"CA installation failed. Manual CA trust may be required.")
+                log.error("CA installation failed. Manual CA trust may be required.")
                 log.debug(f"CA install error: {e}")
         else:
             log.warning("Skipping CA installation: Could not retrieve CA path.")
@@ -148,7 +154,7 @@ def setup_fake_le(exec_obj: Executor, args) -> None: # Pass the full args object
         run_docker_compose(exec_obj, NO2ID_USER, HWGA_DIR, f"restart {NGINX_SERVICE_NAME}")
         log.success("Nginx container restarted. Certificates should now be active.")
     except Exception as e:
-        log.error(f"Failed to restart Nginx container. Check Docker logs.")
+        log.error("Failed to restart Nginx container. Check Docker logs.")
         log.debug(f"Nginx restart error: {e}")
         
     log.success("Fake-LE Orchestration Complete.")

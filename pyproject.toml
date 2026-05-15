@@ -1,0 +1,52 @@
+[project]
+name = "machine-setup"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "requests>=2.28",
+]
+
+[dependency-groups]
+dev = [
+    "bandit",
+    "mypy",
+    "ruff",
+    "pre-commit",
+    "types-requests",
+    "pip-audit>=2.10.0",
+]
+
+[tool.bandit]
+targets = ["."]
+exclude_dirs = [".venv", "tests"]
+skips = [
+    "B603",  # subprocess with list args — intentional throughout
+    "B607",  # partial executable path — intentional throughout
+    "B404",  # subprocess import — intentional
+]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+exclude = [
+    "tools/env-generator\\.py",
+    "tools/firewall-rules\\.py",
+    "tools/github-deploy-key\\.py",
+    "lib/github-deploy-key\\.py",
+    "fix-repo-ssh\\.py",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "S"]
+ignore = [
+    "S603",  # subprocess calls with list args are safe
+    "S607",  # starting a process with a partial path
+    "S404",  # subprocess import
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tools/firewall-rules.py" = ["E501", "E701", "E702", "E722", "E741", "B905", "S110", "F841"]

@@ -41,6 +41,7 @@ CLI flags (see setup_machine.py for full list)
     --ollama-terminal PATH    Open interactive shell in sibling container.
 """
 
+import argparse
 import os
 import shutil
 import socket
@@ -91,7 +92,7 @@ def _is_port_free(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            s.bind(("0.0.0.0", port))  # nosec B104 — intentional probe of all interfaces
+            s.bind(("0.0.0.0", port))  # nosec B104 — intentional probe  # noqa: S104
             return True
         except OSError:
             return False
@@ -261,7 +262,7 @@ def pull_ollama_model(exec_obj: Executor, model: str) -> None:
             log.success(f"Model '{model}' already available — skipping pull.")
             return
     except Exception:
-        pass  # If 'ollama list' fails, attempt the pull anyway.
+        log.debug("ollama list failed; attempting pull anyway.")  # noqa: S110
 
     log.info(f"Pulling Ollama model: {model}  (this may take a while)…")
     exec_obj.run(
@@ -435,7 +436,7 @@ def setup_open_webui(
     On Linux this is ``"root"``; on macOS it is the real (non-root) user.
     """
     os.makedirs(stack_dir, exist_ok=True)
-    os.chmod(stack_dir, 0o755)  # nosec B103 — system/user config dir
+    os.chmod(stack_dir, 0o755)  # nosec B103  # noqa: S103
 
     extra_volumes = _expand_perma_mounts(real_user=real_user, extra_path=extra_mount)
 
@@ -503,7 +504,7 @@ def install_open_terminal_helper(exec_obj: Executor) -> None:
 
     import shutil as _shutil
     _shutil.copy2(src, dst)
-    os.chmod(dst, 0o755)  # nosec B103 — intentional: system CLI tool needs a+x
+    os.chmod(dst, 0o755)  # nosec B103  # noqa: S103
     log.success(f"Installed: {dst}")
 
 def open_terminal_with_path(exec_obj: Executor, host_path: str) -> None:
@@ -633,7 +634,7 @@ def print_google_pse_instructions() -> None:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def setup_ollama(exec_obj: Executor, args) -> None:
+def setup_ollama(exec_obj: Executor, args: argparse.Namespace) -> None:
     """
     Full Ollama + Open WebUI setup.
 

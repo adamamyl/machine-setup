@@ -21,7 +21,7 @@ def get_platform_info() -> Dict[str, Any]:
 
 def is_ubuntu_desktop() -> bool:
     """
-    Detects if the environment appears to be an Ubuntu desktop (Linux, DISPLAY set, gnome-shell present).
+    Detects Ubuntu desktop: Linux, DISPLAY set, gnome-shell present.
     """
     if not is_linux:
         return False
