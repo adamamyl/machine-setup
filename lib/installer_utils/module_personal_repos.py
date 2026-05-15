@@ -35,6 +35,10 @@ def setup_dracula(exec_obj: Executor) -> None:
     _setup_repo(exec_obj, "dracula")
 
 
+def setup_docker_dns_reso(exec_obj: Executor) -> None:
+    _setup_repo(exec_obj, "docker-dns-reso")
+
+
 def setup_all_personal_repos(exec_obj: Executor) -> None:
     for key in PERSONAL_GITHUB_REPOS:
         _setup_repo(exec_obj, key)

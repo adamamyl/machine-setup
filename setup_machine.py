@@ -111,7 +111,7 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     group_personal = parser.add_argument_group("Personal GitHub Repos")
     group_personal.add_argument(
         "--personal-repos", action="store_true", dest="do_personal_repos",
-        help="Clone/update all personal GitHub repos (traefik-proxy, dracula)."
+        help="Clone/update all personal GitHub repos (traefik-proxy, dracula, docker-dns-reso)."
     )
     group_personal.add_argument(
         "--traefik-proxy", action="store_true", dest="do_traefik_proxy",
@@ -120,6 +120,10 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     group_personal.add_argument(
         "--dracula", action="store_true", dest="do_dracula",
         help="Clone/update adamamyl/dracula."
+    )
+    group_personal.add_argument(
+        "--docker-dns-reso", action="store_true", dest="do_docker_dns_reso",
+        help="Clone/update adamamyl/docker-dns-reso."
     )
 
     # --- Virtual Machine Options ---
@@ -306,6 +310,7 @@ def main() -> None:
         "personal_repos": args.do_personal_repos,
         "traefik_proxy": args.do_traefik_proxy,
         "dracula": args.do_dracula,
+        "docker_dns_reso": args.do_docker_dns_reso,
     }
 
     if args.all:
@@ -383,6 +388,9 @@ def main() -> None:
         if tasks["dracula"]:
             log_module_start("PERSONAL REPOS: DRACULA", EXEC)
             module_personal_repos.setup_dracula(EXEC)
+        if tasks["docker_dns_reso"]:
+            log_module_start("PERSONAL REPOS: DOCKER-DNS-RESO", EXEC)
+            module_personal_repos.setup_docker_dns_reso(EXEC)
 
     # Local CA and TLS certs setup-a-tron
     if tasks["fake_le"]:
