@@ -114,6 +114,13 @@ OLLAMA_PERMA_MOUNTS: List[str] = [
     "projects",
 ]
 
+# Personal GitHub Repos (public, cloned for the 'adam' user).
+# dest is resolved at runtime relative to the target user's home dir.
+PERSONAL_GITHUB_REPOS: Dict[str, str] = {
+    "traefik-proxy": "https://github.com/adamamyl/traefik-proxy.git",
+    "dracula": "https://github.com/adamamyl/dracula.git",
+}
+
 # Firewall module:
 FIREWALL_SCRIPT_DEST: str = "/usr/local/bin/apply-firewall.sh"
 FIREWALL_SERVICE_NAME: str = "firewall.service"
