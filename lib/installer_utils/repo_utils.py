@@ -1,8 +1,6 @@
 import os
-import sys
 import platform
 import re
-from typing import Optional, List
 from ..executor import Executor
 from ..logger import log
 from ..constants import HWGA_REPOS, TOOLS_DIR
@@ -51,7 +49,9 @@ def _create_if_needed_ssh_key(exec_obj: Executor, user: str, ssh_dir: str, key_n
             parts = repo_url.split(':')[-1].replace('.git', '')
             comment_suffix = f"'{user}@{host_name}/{parts}'"
             
-        log.info(f"Generating SSH key for {key_name} for user {user} (Comment: {comment_suffix})...")
+        log.info(
+            f"Generating SSH key for {key_name} for user {user} (Comment: {comment_suffix})..."
+        )
         
         cmd = [
             'ssh-keygen', '-t', 'ed25519', '-f', key_file, 
@@ -80,7 +80,9 @@ def _create_if_needed_ssh_key(exec_obj: Executor, user: str, ssh_dir: str, key_n
     return key_is_new
 
 
-def _display_key_and_url_for_repo(exec_obj: Executor, ssh_dir: str, repo_name: str, repo_url: str) -> None:
+def _display_key_and_url_for_repo(
+    exec_obj: Executor, ssh_dir: str, repo_name: str, repo_url: str
+) -> None:
     # ... (function body remains the same) ...
     
     deploy_url = _convert_ssh_to_deploy_url(repo_url)

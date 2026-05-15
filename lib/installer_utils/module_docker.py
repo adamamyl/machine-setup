@@ -1,7 +1,7 @@
 import shutil
 import platform
 import os
-from typing import List, Optional, Union, Dict
+from typing import List, Dict
 import subprocess
 
 from ..executor import Executor
@@ -36,7 +36,10 @@ def _remove_old_docker(exec_obj: Executor) -> None:
     log.info("Checking for and removing old/conflicting Docker packages...")
     
     # Comprehensive query command to find packages that need removal
-    query_cmd = "dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc | cut -f1"
+    query_cmd = (
+        "dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc "
+        "podman-docker containerd runc | cut -f1"
+    )
     
     try:
         # Execute the query command as root to get the list of packages to remove
@@ -51,15 +54,17 @@ def _remove_old_docker(exec_obj: Executor) -> None:
         # 2. Construct the removal command
         remove_cmd = ["apt", "remove", "-y"] + packages_to_remove
         
-        log.warning(f"Removing the following old/conflicting packages: {', '.join(packages_to_remove)}")
+        log.warning(
+            f"Removing the following old/conflicting packages: {', '.join(packages_to_remove)}"
+        )
         
         # Execute the removal command
-        # We allow check=False in case some packages are listed by dpkg but apt fails to find them, though unlikely here.
+        # check=False: dpkg may list packages that apt can't find; we continue regardless.
         exec_obj.run(remove_cmd, force_sudo=True, check=True)
         log.success("Old Docker packages successfully removed.")
 
     except Exception as e:
-        log.warning(f"Failed to execute package removal query or removal. Continuing installation.")
+        log.warning("Failed to execute package removal query or removal. Continuing installation.")
         log.debug(f"Removal error: {e}")
         # We don't halt here, as the subsequent installation step will fail if necessary.
 
@@ -91,21 +96,25 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
         codename = os_info.get("VERSION_CODENAME")  # e.g., 'noble' or 'bookworm'
         
         if not os_id or not codename:
-            log.critical("Could not detect OS ID or Codename from /etc/os-release. Aborting Docker setup.")
+            log.critical(
+                "Could not detect OS ID or Codename from /etc/os-release. Aborting Docker setup."
+            )
             raise RuntimeError("Cannot proceed without distribution details.")
 
         log.info(f"Detected OS: {os_id}, Codename: {codename}")
 
         keyrings_dir = "/etc/apt/keyrings"
-        docker_gpg_path = os.path.join(keyrings_dir, "docker.gpg") # Modern standard uses .gpg binary
+        docker_gpg_path = os.path.join(keyrings_dir, "docker.gpg")
         list_file = "/etc/apt/sources.list.d/docker.list"
         
         exec_obj.run(f"mkdir -p {keyrings_dir}", force_sudo=True)
         
         if not os.path.exists(docker_gpg_path):
             log.info(f"Downloading and adding Docker GPG key for {os_id}.")
-            # Note: We use gpg --dearmor to ensure a binary .gpg file for /etc/apt/keyrings compatibility
-            curl_cmd = f"curl -fsSL https://download.docker.com/linux/{os_id}/gpg | gpg --dearmor -o {docker_gpg_path}"
+            curl_cmd = (
+                f"curl -fsSL https://download.docker.com/linux/{os_id}/gpg "
+                f"| gpg --dearmor -o {docker_gpg_path}"
+            )
             exec_obj.run(curl_cmd, force_sudo=True)
             # Ensure proper read permissions for apt
             exec_obj.run(f"chmod a+r {docker_gpg_path}", force_sudo=True)
@@ -122,7 +131,10 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
             display_arch = arch
 
         # 2. Interpolate the correct ID, codename and arch into the repository line
-        repo_line = f"deb [arch={display_arch} signed-by={docker_gpg_path}] https://download.docker.com/linux/{os_id} {codename} stable"
+        repo_line = (
+            f"deb [arch={display_arch} signed-by={docker_gpg_path}]"
+            f" https://download.docker.com/linux/{os_id} {codename} stable"
+        )
         
         log.info(f"Using APT repository line: {repo_line}")
         ensure_apt_repo(exec_obj, list_file, repo_line)
@@ -144,7 +156,7 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
 
 def _verify_docker_installation(exec_obj: Executor) -> None:
     """
-    Runs a simple Docker command (like 'docker run hello-world') and cleans up the resulting image/container.
+    Runs 'docker info' and 'docker run hello-world' to verify installation, then cleans up.
     """
     log.info("Running post-installation verification test...")
     
@@ -212,7 +224,12 @@ def check_docker_volume_exists(exec_obj: Executor, volume_name: str) -> bool:
     log.info(f"Checking for existence of Docker volume: {volume_name}")
     try:
         # Use 'docker volume ls -q -f name=...' to check existence silently
-        result = exec_obj.run(["docker", "volume", "ls", "-q", "-f", f"name=^{volume_name}$"], check=True, force_sudo=True, run_quiet=True)
+        result = exec_obj.run(
+            ["docker", "volume", "ls", "-q", "-f", f"name=^{volume_name}$"],
+            check=True,
+            force_sudo=True,
+            run_quiet=True,
+        )
         if result.stdout.strip() == volume_name:
             log.success(f"Docker volume '{volume_name}' exists.")
             return True
@@ -222,7 +239,9 @@ def check_docker_volume_exists(exec_obj: Executor, volume_name: str) -> bool:
         log.error(f"Error checking Docker volumes: {e.stderr}")
         return False
 
-def are_docker_services_running(exec_obj: Executor, user: str, cwd: str, service_names: List[str]) -> bool:
+def are_docker_services_running(
+    exec_obj: Executor, user: str, cwd: str, service_names: List[str]
+) -> bool:
     """
     Checks if a list of specific Docker Compose services are currently in the 'running' state.
     Requires running as the user that owns the compose stack.
@@ -255,7 +274,7 @@ def are_docker_services_running(exec_obj: Executor, user: str, cwd: str, service
         return all_running
         
     except subprocess.CalledProcessError as e:
-        log.warning(f"Failed to execute 'docker compose ps'. Stack may not exist.")
+        log.warning("Failed to execute 'docker compose ps'. Stack may not exist.")
         log.debug(f"PS error: {e.stderr}")
         return False
     except Exception as e:

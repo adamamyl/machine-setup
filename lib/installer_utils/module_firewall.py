@@ -1,4 +1,5 @@
 import os
+import tempfile
 from ..executor import Executor
 from ..logger import log
 from ..constants import FIREWALL_SCRIPT_DEST, FIREWALL_SERVICE_NAME, FIREWALL_PACKAGES, TOOLS_DIR
@@ -156,7 +157,7 @@ DEFAULT_IFACE=$(ip route show default | awk '/default/ {print $5}' | head -1)
 
 # Allow outbound port 25 from the host itself (Exim MTA) and Docker relay subnet.
 # We are intentionally over-permissive for 172.16/12 — all Docker bridges live here.
-v_echo "    # Allow outbound SMTP from lo, primary interface ($DEFAULT_IFACE), and Docker ($DOCKER_V4_SUBNET)"
+v_echo "    # Allow outbound SMTP: lo, $DEFAULT_IFACE, Docker ($DOCKER_V4_SUBNET)"
 iptables -A OUTPUT -o lo -p tcp --dport 25 -j ACCEPT
 [ -n "$DEFAULT_IFACE" ] && iptables -A OUTPUT -o "$DEFAULT_IFACE" -p tcp --dport 25 -j ACCEPT
 iptables -A OUTPUT -s "$DOCKER_V4_SUBNET" -p tcp --dport 25 -j ACCEPT
@@ -242,10 +243,9 @@ def setup_firewall(exec_obj: Executor) -> None:
 
     # 2. Install the Management Script
     log.info(f"Writing firewall management script to {FIREWALL_SCRIPT_DEST}")
-    tmp_path = "/tmp/firewall_setup.sh"
-    with open(tmp_path, "w") as f:
-        f.write(FIREWALL_SCRIPT_CONTENT)
-    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as tmp:
+        tmp.write(FIREWALL_SCRIPT_CONTENT)
+        tmp_path = tmp.name
     exec_obj.run(f"mv {tmp_path} {FIREWALL_SCRIPT_DEST}", force_sudo=True)
     exec_obj.run(f"chmod +x {FIREWALL_SCRIPT_DEST}", force_sudo=True)
     exec_obj.run(f"chown root:root {FIREWALL_SCRIPT_DEST}", force_sudo=True)
@@ -267,10 +267,9 @@ def setup_firewall(exec_obj: Executor) -> None:
     service_path = f"/etc/systemd/system/{FIREWALL_SERVICE_NAME}"
     log.info(f"Installing systemd service at {service_path}")
     
-    tmp_service = "/tmp/firewall.service"
-    with open(tmp_service, "w") as f:
-        f.write(SERVICE_CONTENT)
-        
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.service', delete=False) as tmp:
+        tmp.write(SERVICE_CONTENT)
+        tmp_service = tmp.name
     exec_obj.run(f"mv {tmp_service} {service_path}", force_sudo=True)
     exec_obj.run("systemctl daemon-reload", force_sudo=True)
     exec_obj.run(f"systemctl enable {FIREWALL_SERVICE_NAME}", force_sudo=True)

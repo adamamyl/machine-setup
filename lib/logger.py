@@ -2,6 +2,19 @@ import logging
 import sys
 from typing import Any
 
+SUCCESS = 25
+logging.addLevelName(SUCCESS, "SUCCESS")
+
+
+class CustomLogger(logging.Logger):
+    """Logger subclass that adds a typed success() method."""
+
+    def success(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        self.log(SUCCESS, msg, *args, **kwargs)
+
+
+logging.setLoggerClass(CustomLogger)
+
 # --- ANSI Color Codes ---
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
@@ -19,10 +32,6 @@ EMOJI_WARN = "⚠️"
 EMOJI_ERR = "❌"
 EMOJI_DEBUG = "🔎"
 EMOJI_PACKAGE = "📦" # Used for module start banners
-
-SUCCESS = 25
-logging.addLevelName(SUCCESS, 'SUCCESS')
-
 
 class CustomFormatter(logging.Formatter):
     """Custom Formatter that adds colors and emojis based on log level."""
@@ -42,12 +51,12 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
 
-def configure_logger(quiet: bool = False, verbose: bool = False) -> logging.Logger:
+def configure_logger(quiet: bool = False, verbose: bool = False) -> CustomLogger:
     """Sets up the global logger with custom formatting and handles quiet/verbose flags."""
     
     logger = logging.getLogger("MachineSetup")
+    assert isinstance(logger, CustomLogger)  # noqa: S101
     logger.setLevel(logging.DEBUG)
-
     logger.propagate = False
 
     handler = logging.StreamHandler(sys.stdout)
@@ -62,15 +71,8 @@ def configure_logger(quiet: bool = False, verbose: bool = False) -> logging.Logg
 
     if logger.hasHandlers():
         logger.handlers.clear()
-        
-    logger.addHandler(handler)
-    
-    def success(msg: str, *args: Any, **kwargs: Any) -> None:
-        """Logs a SUCCESS (ok) message."""
-        logger.log(SUCCESS, msg, *args, **kwargs)
 
-    setattr(logger, 'success', success)
-    
+    logger.addHandler(handler)
     return logger
 
 
@@ -104,4 +106,4 @@ def log_module_start(module_name: str, exec_obj: Any) -> None:
     print(outer_line + "\n")
 
 
-log = logging.getLogger("MachineSetup")
+log: CustomLogger = logging.getLogger("MachineSetup")  # type: ignore[assignment]

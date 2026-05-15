@@ -68,7 +68,7 @@ def ensure_ignore_file(ignore_file, patterns):
 def main():
     parser = argparse.ArgumentParser(description="Sync .env from template with Diceware passwords")
     parser.add_argument("--dry-run", action="store_true", help="Preview changes without writing")
-    parser.add_argument("--sort", action="store_true", help="Sort keys alphabetically in output (keep comments)")
+    parser.add_argument("--sort", action="store_true", help="Sort keys alphabetically.")
     parser.add_argument("--env", default=None, help="Environment name, e.g. dev, staging")
     parser.add_argument("--template", default=None, help="Specify a custom template file")
     args = parser.parse_args()
@@ -82,7 +82,7 @@ def main():
     elif args.env:
         template_file = f".env-template.{args.env}"
         if not os.path.exists(template_file):
-            print(f"{YELLOW}⚠️  Template {template_file} not found, falling back to .env-template{RESET}")
+            print(f"{YELLOW}⚠️  Template {template_file} not found, falling back to .env-template{RESET}")  # noqa: E501
             template_file = ".env-template"
     else:
         template_file = ".env-template"

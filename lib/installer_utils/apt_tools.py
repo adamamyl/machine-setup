@@ -7,7 +7,9 @@ def _is_package_installed(pkg: str) -> bool:
     """Checks if a package is installed using dpkg -s."""
     try:
         # Use subprocess.run directly as we don't need Executor for a simple check
-        subprocess.run(['dpkg', '-s', pkg], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ['dpkg', '-s', pkg], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         return True
     except subprocess.CalledProcessError:
         return False
@@ -61,7 +63,7 @@ def apt_autoremove(exec_obj: Executor) -> None:
     exec_obj.run(autoremove_cmd, force_sudo=True)
 
 def ensure_apt_repo(exec_obj: Executor, list_file: str, repo_line: str) -> None:
-    """Adds an apt repository line to a file if it is not already present, and deduplicates the file."""
+    """Adds an apt repository line to a file if not already present, and deduplicates."""
 
     existing_lines = []
     try:

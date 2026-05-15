@@ -1,7 +1,7 @@
 import subprocess
 import os
 import sys
-from typing import List, Optional, Union, Any, Dict
+from typing import List, Optional, Union, Dict
 from .logger import log
 from . import constants
 
@@ -11,7 +11,9 @@ class Executor:
     Handles DRY_RUN, SUDO elevation, logging, and error checking.
     """
 
-    def __init__(self, dry_run: bool = False, quiet: bool = False, verbose: bool = False, force: bool = False):
+    def __init__(
+        self, dry_run: bool = False, quiet: bool = False, verbose: bool = False, force: bool = False
+    ):
         self.dry_run = dry_run
         self.quiet = quiet
         self.verbose = verbose
@@ -31,9 +33,10 @@ class Executor:
             env: Optional[Dict[str, str]] = None,
             check: bool = True,
             run_quiet: bool = False, 
-            interactive: bool = False) -> subprocess.CompletedProcess:
+            interactive: bool = False) -> subprocess.CompletedProcess[str]:
         """
-        Executes a shell command. If interactive=True, it allows direct terminal I/O (no pipe capture).
+        Executes a shell command.
+        If interactive=True, allows direct terminal I/O (no pipe capture).
         """
         
         if isinstance(command, str):
@@ -44,8 +47,7 @@ class Executor:
             log_cmd = " ".join(command)
 
         if user:
-            # Note: We are running the command as root, but providing user context via sudo -u 
-            # (although in the recursive call, the 'user' is handled by the recursive script's logic)
+            # Running as root but delegating via sudo -u; recursive calls handle user context.
             if os.geteuid() != 0:
                 log_cmd = f"sudo -H -u {user} {log_cmd}"
                 cmd_list = ['sudo', '-H', '-u', user] + cmd_list
@@ -63,7 +65,7 @@ class Executor:
         if self.dry_run:
             if not suppress_logging:
                 log.info(f"[DRY-RUN] {log_cmd}")
-            return subprocess.CompletedProcess(args=cmd_list, returncode=0, stdout=b"", stderr=b"")
+            return subprocess.CompletedProcess(args=cmd_list, returncode=0, stdout="", stderr="")
 
         # --- 4. I/O Stream Determination ---
         if interactive:
@@ -123,10 +125,10 @@ class Executor:
 EXEC = Executor()
 
 
-def run_function_as_user(executor: Executor, 
-                         user: str, 
-                         function_name: str, 
-                         *func_args: str) -> subprocess.CompletedProcess:
+def run_function_as_user(executor: Executor,
+                         user: str,
+                         function_name: str,
+                         *func_args: str) -> subprocess.CompletedProcess[str]:
     """
     Executes a specific Python function (by name) from the main script as another user
     by recursively calling the setup script.

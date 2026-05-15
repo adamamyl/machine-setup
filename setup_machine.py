@@ -8,7 +8,7 @@ from typing import List, Tuple
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 # Import core utilities
-from lib.constants import *
+from lib.constants import VENVDIR
 from lib.logger import configure_logger, log, log_module_start
 from lib.executor import EXEC, run_function_as_user
 
@@ -62,11 +62,11 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     
     # --- Global Options ---
     group_global = parser.add_argument_group("Global Options")
-    group_global.add_argument("--dry-run", action="store_true", help="Log actions without executing.")
-    group_global.add_argument("--force", action="store_true", help="Overwrite files / skip prompts.")
-    group_global.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug output.")
-    group_global.add_argument("-q", "--quiet", action="store_true", help="Minimal output (warnings and errors only).")
-    group_global.add_argument("--no-autoremove", action="store_true", help="Skip 'apt autoremove' at the end.")
+    group_global.add_argument("--dry-run", action="store_true", help="Log actions, no execution.")
+    group_global.add_argument("--force", action="store_true", help="Overwrite files; skip prompts.")
+    group_global.add_argument("-v", "--verbose", action="store_true", help="Verbose/debug output.")
+    group_global.add_argument("-q", "--quiet", action="store_true", help="Warnings/errors only.")
+    group_global.add_argument("--no-autoremove", action="store_true", help="Skip apt autoremove.")
     group_global.add_argument("--debug", type=int, nargs='?', const=1, default=0,
                               help="Enable debug tracing (1: basic, 2: detailed).")
 
@@ -94,13 +94,15 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     
     # PRIVATE REPOS (Requires interactive key setup)
     group_modules.add_argument("--hwga", "--no2id", action="store_true", dest="do_no2id",
-                               help="Setup 'no2id-docker' user and private NO2ID (HWGA) repositories.")
-    group_modules.add_argument("--pseudohome", "--psuedohome", action="store_true", dest="do_pseudohome",
-                               help="Setup 'adam' user and pseudohome repository (private git.amyl.org.uk).")
+                               help="Setup 'no2id-docker' user and private NO2ID (HWGA) repos.")
+    group_modules.add_argument(
+        "--pseudohome", "--psuedohome", action="store_true", dest="do_pseudohome",
+        help="Setup 'adam' user and pseudohome repo (git.amyl.org.uk)."
+    )
     
     # --- Fake-LE Module Flag ---
     group_modules.add_argument("--fake-le", action="store_true", dest="do_fake_le",
-                               help="Run Docker Compose, Fake-LE cert generation, and orchestration.")
+                               help="Fake-LE cert generation and Docker orchestration.")
 
     group_modules.add_argument("--wolfcraig", action="store_true", dest="do_wolfcraig",
                                help="Clone wolfcraig + ghost-docker and run server_setup.py.")
@@ -193,17 +195,27 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
 
     # --- fake_le (self-signed tls certs for testing) Options ---
     group_fake_le_flags = parser.add_argument_group("Fake-LE Orchestration Options")
-    group_fake_le_flags.add_argument("--fake-le-debug", action="store_true", dest="fake_le_debug", help="Pass --debug to the fake-le installer script.")
-    group_fake_le_flags.add_argument("--fake-le-dry-run", action="store_true", dest="fake_le_dry_run", help="Pass --dry-run to the fake-le installer script.")
-    group_fake_le_flags.add_argument("--fake-le-force", action="store_true", dest="fake_le_force", help="Pass --force to the fake-le installer script.")
-    group_fake_le_flags.add_argument("--fake-le-ca-install", action="store_true", dest="do_fake_le_ca_install", 
-                                     help="Run the installer script to add the CA to the system trust store.")
+    group_fake_le_flags.add_argument(
+        "--fake-le-debug", action="store_true", dest="fake_le_debug",
+        help="Pass --debug to the fake-le installer."
+    )
+    group_fake_le_flags.add_argument(
+        "--fake-le-dry-run", action="store_true", dest="fake_le_dry_run",
+        help="Pass --dry-run to the fake-le installer."
+    )
+    group_fake_le_flags.add_argument(
+        "--fake-le-force", action="store_true", dest="fake_le_force",
+        help="Pass --force to the fake-le installer."
+    )
+    group_fake_le_flags.add_argument("--fake-le-ca-install", action="store_true",
+                                     dest="do_fake_le_ca_install",
+                                     help="Add the CA to the system trust store.")
 
     return parser.parse_known_args()
 
 
 # --- Main Execution Block ---
-def main():
+def main() -> None:
     args, unknown = parse_args()
     
     # Configure logger first based on quiet/verbose/debug flags
@@ -224,10 +236,17 @@ def main():
     EXEC.force = args.force # Propagate force flag for idempotency overrides
     
     # 3. Import Modules (required here for internal command lookup and execution)
-    from lib.installer_utils import module_docker, module_no2id, module_pseudohome, tailscale, user_mgmt, packages, virtmachine, vscode, tweaks, module_fake_le, module_wolfcraig, module_ollama
+    from lib.installer_utils import (  # noqa: E402
+        module_docker, module_fake_le, module_no2id, module_ollama,
+        module_pseudohome, module_wolfcraig,
+        tailscale, user_mgmt, packages, virtmachine, vscode, tweaks,
+    )
     from lib.installer_utils.apt_tools import apt_autoremove
 
-    log.info(f"Configuration: Dry Run={args.dry_run}, Quiet={args.quiet}, Verbose={args.verbose}, Force={args.force}")
+    log.info(
+        f"Configuration: Dry Run={args.dry_run}, Quiet={args.quiet}, "
+        f"Verbose={args.verbose}, Force={args.force}"
+    )
 
     # 4. Internal Command Execution (Handles recursive calls from sudo -u)
     if args.run_cmd:

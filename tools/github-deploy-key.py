@@ -2,7 +2,6 @@
 import os
 import sys
 import argparse
-import subprocess
 import requests
 import getpass
 
@@ -51,7 +50,7 @@ def get_github_token():
         if validate_token(token):
             return token
         else:
-            warn("Existing GITHUB_TOKEN appears invalid; prompting for a new token.")
+            info("Existing GITHUB_TOKEN appears invalid; prompting for a new token.")
 
     token = prompt_for_token()
 
@@ -82,7 +81,7 @@ def list_deploy_keys(repo, token):
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github.v3+json"
     }
-    r = requests.get(url, headers=headers)
+    r = requests.get(url, headers=headers, timeout=10)
     if r.status_code == 404:
         err(f"Repository {repo} not found or insufficient permissions")
         sys.exit(1)
@@ -104,7 +103,7 @@ def main():
     info(f"Deploy key not found for {args.repo}")
     print("\n=== Public Key to add to GitHub deploy keys ===")
     print(pubkey)
-    print(f"\nAdd the key at:")
+    print("\nAdd the key at:")
     print(f"  👉  https://github.com/{args.repo}/settings/keys\n")
 
     input("Once added, press ENTER to continue...")
