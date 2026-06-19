@@ -53,13 +53,14 @@ def setup_no2id(exec_obj: Executor) -> None:
         ssh_key_path = os.path.join(ssh_dir, repo_name)
         
         clone_or_update_private_repo_with_key_check(
-            exec_obj, 
-            repo_url, 
-            dest_dir, 
+            exec_obj,
+            repo_url,
+            dest_dir,
             ssh_key_path=ssh_key_path,
             repo_name=repo_name,
             extra_git_flags=extra_flags,
-            user=user # Execute as target user
+            user=user,
+            group=config.get('group'),
         )
         
         # --- NEW STEP: Configure local Git SSH key for subsequent pulls/fetches ---

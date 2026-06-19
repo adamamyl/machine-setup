@@ -71,9 +71,11 @@ def setup_pseudohome(exec_obj: Executor) -> None:
         user=user,  # Execute as 'adam'
     )
 
-    # 6. Fix permissions
-    exec_obj.run(f"chown -R {user}:{user} {os.path.dirname(dest_dir)}", force_sudo=True)
+    # 6. Fix permissions: home dir ownership (non-recursive — must not clobber .ssh),
+    # then repo contents, then re-enforce .ssh in case anything above touched it.
+    exec_obj.run(f"chown {user}:{user} {os.path.dirname(dest_dir)}", force_sudo=True)
     set_homedir_perms_recursively(exec_obj, user, dest_dir)
+    set_ssh_perms(exec_obj, user, ssh_dir)
 
     # 7. Run installer script (as the user)
     installer_path = os.path.join(dest_dir, PSEUDOHOME_INSTALLER)
