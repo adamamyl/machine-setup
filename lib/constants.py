@@ -16,7 +16,7 @@ DEFAULT_VM_USER: str = "adam"
 
 # --- Binary Paths ---
 # Find the absolute path for git, ensuring portability.
-GIT_BIN_PATH: str = shutil.which('git') or '/usr/bin/git' 
+GIT_BIN_PATH: str = shutil.which("git") or "/usr/bin/git"
 
 # --- SSH Key Mappings ---
 # Maps local Linux user (key) to GitHub account (value) for authorized_keys download.
@@ -25,7 +25,7 @@ USER_GITHUB_KEY_MAP: Dict[str, str] = {
     "root": "adamamyl",
     "adam": "adamamyl",
     # Add more users here:
-    # "john": "johnsmith123" 
+    # "john": "johnsmith123"
 }
 
 # --- Repo/Installer Definitions ---
@@ -34,12 +34,12 @@ USER_GITHUB_KEY_MAP: Dict[str, str] = {
 SYSTEM_REPOS: Dict[str, Dict[str, str]] = {
     "post-cloud-init": {
         "url": "https://github.com/adamamyl/post-cloud-init.git",
-        "installer": "install"
+        "installer": "install",
     },
     "update-all-the-packages": {
         "url": "https://github.com/adamamyl/update-all-the-packages.git",
-        "installer": "install-unattended-upgrades"
-    }
+        "installer": "install-unattended-upgrades",
+    },
 }
 
 # NO2ID / Private Repos
@@ -57,14 +57,26 @@ HWGA_REPOS: Dict[str, Dict[str, Any]] = {
         "url": "git@github.com:adamamyl/fake-le.git",
         "dest": f"{ROOT_SRC_CHECKOUT}/fake-le",
         "installer": "fake-le-for-no2id-docker-installer",
-        "extra_flags": ""
-    }
+        "extra_flags": "",
+    },
 }
 
 # Standard Packages
 STANDARD_PACKAGES: List[str] = [
-    "diceware", "findutils", "grep", "gzip", "hostname", "iputils-ping",
-    "net-tools", "openssh-server", "vim", "python3", "git", "curl", "mtr", "tree"
+    "diceware",
+    "findutils",
+    "grep",
+    "gzip",
+    "hostname",
+    "iputils-ping",
+    "net-tools",
+    "openssh-server",
+    "vim",
+    "python3",
+    "git",
+    "curl",
+    "mtr",
+    "tree",
 ]
 
 # Packages required for VM setup
@@ -119,13 +131,13 @@ OLLAMA_PERMA_MOUNTS: List[str] = [
 PERSONAL_GITHUB_REPOS: Dict[str, str] = {
     "traefik-proxy": "https://github.com/adamamyl/traefik-proxy.git",
     "dracula": "https://github.com/adamamyl/dracula.git",
-    "docker-dns-reso": "git@github.com:adamamyl/docker-dns-reso.git",
+    "docker-dns-reso": "https://github.com/adamamyl/docker-dns-reso.git",
 }
 
 # Firewall module:
 FIREWALL_SCRIPT_DEST: str = "/usr/local/bin/apply-firewall.sh"
 FIREWALL_SERVICE_NAME: str = "firewall.service"
 FIREWALL_CONF_DIR: str = "/etc/iptables"
-# iptables and ip6tables are standard, but we ensure iptables-persistent 
+# iptables and ip6tables are standard, but we ensure iptables-persistent
 # directory structure exists for our own script's logic.
 FIREWALL_PACKAGES: List[str] = ["iptables", "curl"]
