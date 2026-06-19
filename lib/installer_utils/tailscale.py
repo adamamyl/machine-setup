@@ -1,8 +1,9 @@
 import shutil
 from ..executor import Executor
 from ..logger import log
-import subprocess # Added for specific error handling
-import time # Added for sleep in retry logic
+import subprocess  # Added for specific error handling
+import time  # Added for sleep in retry logic
+
 
 def install_tailscale(exec_obj: Executor) -> None:
     """Installs Tailscale using their official curl | sh script."""
@@ -14,12 +15,13 @@ def install_tailscale(exec_obj: Executor) -> None:
     exec_obj.run("curl -fsSL https://tailscale.com/install.sh | sh", force_sudo=True)
     log.success("Tailscale installation finished.")
 
+
 def ensure_tailscale_strict(exec_obj: Executor) -> None:
     """Enables Tailscale SSH."""
     if not shutil.which("tailscale"):
         log.warning("Tailscale not installed, skipping strict setup.")
         return
-        
+
     log.info("Enabling Tailscale SSH (Linux only).")
     try:
         # Note: tailscale commands typically need sudo/root privilege to interact with the service
@@ -27,6 +29,7 @@ def ensure_tailscale_strict(exec_obj: Executor) -> None:
         log.success("Tailscale SSH enabled.")
     except Exception:
         log.warning("Failed to enable Tailscale SSH.")
+
 
 def ensure_tailscale_connected(exec_obj: Executor) -> bool:
     """
@@ -38,15 +41,21 @@ def ensure_tailscale_connected(exec_obj: Executor) -> bool:
         log.warning("Tailscale not installed. Cannot ensure tailnet connection.")
         return False
 
+    # Show current status before entering retry loop — helps diagnose login vs service issues
+    log.info("Checking Tailscale status...")
+    try:
+        exec_obj.run(["tailscale", "status"], check=False, force_sudo=True)
+    except Exception as e:
+        log.debug(f"tailscale status failed: {e}")
+
     MAX_RETRIES = 3
     for attempt in range(MAX_RETRIES):
-        
         # 1. Check connection status using a robust command (tailscale ip -4)
         try:
             # Running as root (force_sudo=True) to ensure interaction with the system service.
             # check=True will raise CalledProcessError if not logged in/service is down.
             result = exec_obj.run("tailscale ip -4", check=True, run_quiet=True, force_sudo=True)
-            
+
             # Check if the output is a valid IPv4 address (a sign of a successful connection)
             if result.stdout.strip() and "." in result.stdout.strip():
                 log.success(f"Tailscale already connected (IP: {result.stdout.strip()}).")
@@ -62,13 +71,12 @@ def ensure_tailscale_connected(exec_obj: Executor) -> bool:
             )
             if attempt == MAX_RETRIES - 1:
                 break
-            
+
         except Exception as e:
             # Catch unexpected execution issues like OSError (was likely the original problem)
             log.warning(f"Tailscale status check caused internal error: {e}. Proceeding to 'up'.")
             if attempt == MAX_RETRIES - 1:
                 break
-
 
         # 2. Attempt Interactive Login
         log.info("Initiating interactive 'tailscale up' command...")
@@ -78,7 +86,7 @@ def ensure_tailscale_connected(exec_obj: Executor) -> bool:
             # Run interactively to allow terminal I/O for URL and authentication.
             exec_obj.run(["tailscale", "up"], force_sudo=True, interactive=True)
             # On success, next iteration re-checks status.
-            
+
         except subprocess.CalledProcessError as e:
             log.error(
                 f"Tailscale 'up' failed with exit code {e.returncode}. "
@@ -86,11 +94,11 @@ def ensure_tailscale_connected(exec_obj: Executor) -> bool:
             )
         except Exception as e:
             log.error(f"Tailscale 'up' failed unexpectedly: {e}")
-            
+
         if attempt < MAX_RETRIES - 1:
             log.info("Waiting 5 seconds before re-checking connection...")
             time.sleep(5)
-            
+
     # If the loop finishes without a successful connection
     log.error(f"Tailscale login failed after {MAX_RETRIES} attempts.")
     return False
