@@ -7,12 +7,13 @@ from ..constants import GIT_BIN_PATH
 from .repo_utils import _display_key_and_url_for_repo
 import time # For retry sleep
 
-def clone_or_update_repo(exec_obj: Executor, 
-                         repo_url: str, 
-                         dest_dir: str, 
-                         ssh_key_path: Optional[str] = None, 
+def clone_or_update_repo(exec_obj: Executor,
+                         repo_url: str,
+                         dest_dir: str,
+                         ssh_key_path: Optional[str] = None,
                          extra_git_flags: Optional[str] = "",
-                         user: Optional[str] = None) -> None:
+                         user: Optional[str] = None,
+                         group: Optional[str] = None) -> None:
     """
     Clones or updates a Git repository, handling SSH deploy keys if specified.
     
@@ -34,10 +35,12 @@ def clone_or_update_repo(exec_obj: Executor,
     # 1. Ensure parent dir exists and has correct group/permissions
     exec_obj.run(f"mkdir -p {parent_dir}", force_sudo=True)
     
-    # Use 'docker' group and ensure recursive chmod
-    exec_obj.run(f"chgrp -R docker {parent_dir} || true", force_sudo=True)
-    exec_obj.run(f"chmod -R g+w {parent_dir}", force_sudo=True)
-    exec_obj.run(f"chmod -R -s {parent_dir} || true", force_sudo=True)
+    # Set group ownership and ensure group-writeable; only when a group is explicitly requested.
+    # Never apply to home directories — callers that need a specific group (e.g. docker) pass it.
+    if group:
+        exec_obj.run(f"chgrp -R {group} {parent_dir} || true", force_sudo=True)
+        exec_obj.run(f"chmod -R g+w {parent_dir}", force_sudo=True)
+        exec_obj.run(f"chmod -R -s {parent_dir} || true", force_sudo=True)
 
     # 2. Prepare environment prefix for SSH key usage
     env_prefix = "" 
@@ -86,13 +89,14 @@ def clone_or_update_repo(exec_obj: Executor,
         exec_obj.run(final_cmd, user=user)
         log.success(f"Repository cloned: {dest_dir}")
 
-def clone_or_update_private_repo_with_key_check(exec_obj: Executor, 
-                                               repo_url: str, 
-                                               dest_dir: str, 
-                                               ssh_key_path: str, 
+def clone_or_update_private_repo_with_key_check(exec_obj: Executor,
+                                               repo_url: str,
+                                               dest_dir: str,
+                                               ssh_key_path: str,
                                                repo_name: str,
                                                extra_git_flags: Optional[str] = "",
-                                               user: str = "root") -> None:
+                                               user: str = "root",
+                                               group: Optional[str] = None) -> None:
     """
     Attempts to clone a private repo. If it fails due to SSH permission,
     it prompts the user to add the deploy key and retries the clone once.
@@ -108,12 +112,13 @@ def clone_or_update_private_repo_with_key_check(exec_obj: Executor,
                 f"(Attempt {attempt + 1}/{MAX_CLONE_ATTEMPTS})..."
             )
             clone_or_update_repo(
-                exec_obj, 
-                repo_url, 
-                dest_dir, 
+                exec_obj,
+                repo_url,
+                dest_dir,
                 ssh_key_path=ssh_key_path,
                 extra_git_flags=extra_git_flags,
-                user=user
+                user=user,
+                group=group,
             )
             clone_succeeded = True
             break # Exit loop on success

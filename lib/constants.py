@@ -46,6 +46,7 @@ SYSTEM_REPOS: Dict[str, Dict[str, str]] = {
 HWGA_REPOS: Dict[str, Dict[str, Any]] = {
     "herewegoagain": {
         "user": "no2id-docker",
+        "group": "docker",
         "url": "git@github.com:no2id/herewegoagain.git",
         "dest": f"{ROOT_SRC_CHECKOUT}/herewegoagain",
         "installer": "install",
@@ -54,6 +55,7 @@ HWGA_REPOS: Dict[str, Dict[str, Any]] = {
     },
     "fake-le": {
         "user": "adam",
+        "group": "docker",
         "url": "git@github.com:adamamyl/fake-le.git",
         "dest": f"{ROOT_SRC_CHECKOUT}/fake-le",
         "installer": "fake-le-for-no2id-docker-installer",
@@ -128,10 +130,19 @@ OLLAMA_PERMA_MOUNTS: List[str] = [
 
 # Personal GitHub Repos (public, cloned for the 'adam' user).
 # dest is resolved at runtime relative to the target user's home dir.
-PERSONAL_GITHUB_REPOS: Dict[str, str] = {
-    "traefik-proxy": "https://github.com/adamamyl/traefik-proxy.git",
-    "dracula": "https://github.com/adamamyl/dracula.git",
-    "docker-dns-reso": "https://github.com/adamamyl/docker-dns-reso.git",
+# group: set group ownership on the checkout; omit for user-only repos.
+PERSONAL_GITHUB_REPOS: Dict[str, Dict[str, str]] = {
+    "traefik-proxy": {
+        "url": "https://github.com/adamamyl/traefik-proxy.git",
+        "group": "docker",
+    },
+    "dracula": {
+        "url": "https://github.com/adamamyl/dracula.git",
+    },
+    "docker-dns-reso": {
+        "url": "https://github.com/adamamyl/docker-dns-reso.git",
+        "group": "docker",
+    },
 }
 
 # Firewall module:

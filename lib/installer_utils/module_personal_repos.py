@@ -11,7 +11,9 @@ PERSONAL_REPOS_USER: str = "adam"
 
 
 def _setup_repo(exec_obj: Executor, key: str) -> None:
-    url = PERSONAL_GITHUB_REPOS[key]
+    config = PERSONAL_GITHUB_REPOS[key]
+    url = config["url"]
+    group = config.get("group")
     user_home = Path(f"~{PERSONAL_REPOS_USER}").expanduser()
     projects_dir = user_home / "projects"
     dest = str(projects_dir / key)
@@ -22,8 +24,10 @@ def _setup_repo(exec_obj: Executor, key: str) -> None:
     )
 
     log.info(f"Cloning/updating {key}...")
-    clone_or_update_repo(exec_obj, url, dest, user=PERSONAL_REPOS_USER)
+    clone_or_update_repo(exec_obj, url, dest, user=PERSONAL_REPOS_USER, group=group)
     exec_obj.run(f"chown -R {PERSONAL_REPOS_USER}:{PERSONAL_REPOS_USER} {dest}", force_sudo=True)
+    if group:
+        exec_obj.run(f"chgrp -R {group} {dest}", force_sudo=True)
     log.success(f"{key} ready at {dest}.")
 
 
