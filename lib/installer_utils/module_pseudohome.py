@@ -7,7 +7,7 @@ from .git_tools import (
     set_homedir_perms_recursively,
     set_ssh_perms,
 )
-from .repo_utils import _create_if_needed_ssh_key
+from .repo_utils import _create_if_needed_ssh_key, _display_key_and_url_for_repo
 from .ssh_utils import probe_and_fix_ssh
 from .tailscale import ensure_tailscale_connected
 
@@ -52,30 +52,36 @@ def setup_pseudohome(exec_obj: Executor) -> None:
     # 4. SSH connectivity probe — remediates known_hosts / key perms, prompts if key missing
     ssh_key_path = os.path.join(ssh_dir, repo_name)
     log.info("Probing SSH connectivity to git.amyl.org.uk...")
-    probe_and_fix_ssh(
+    ssh_ok = probe_and_fix_ssh(
         exec_obj,
         host="git.amyl.org.uk",
         ssh_user=user,
         key_path=ssh_key_path,
     )
+    if not ssh_ok and not exec_obj.force:
+        log.warning(
+            "Cannot reach git.amyl.org.uk — the pseudohome deploy key may not be authorised yet."
+        )
+        _display_key_and_url_for_repo(exec_obj, ssh_dir, repo_name, PSEUDOHOME_REPO_URL)
 
-    # 5. Clone/Update Repo (Handles interactive key prompt and retry on failure)
+    # 5. Clone/Update Repo — always re-enforce .ssh perms even if clone fails.
+    try:
+        clone_or_update_private_repo_with_key_check(
+            exec_obj,
+            PSEUDOHOME_REPO_URL,
+            dest_dir,
+            ssh_key_path=ssh_key_path,
+            repo_name=repo_name,
+            extra_git_flags="--recursive",
+            user=user,
+        )
 
-    clone_or_update_private_repo_with_key_check(
-        exec_obj,
-        PSEUDOHOME_REPO_URL,
-        dest_dir,
-        ssh_key_path=ssh_key_path,
-        repo_name=repo_name,
-        extra_git_flags="--recursive",
-        user=user,  # Execute as 'adam'
-    )
-
-    # 6. Fix permissions: home dir ownership (non-recursive — must not clobber .ssh),
-    # then repo contents, then re-enforce .ssh in case anything above touched it.
-    exec_obj.run(f"chown {user}:{user} {os.path.dirname(dest_dir)}", force_sudo=True)
-    set_homedir_perms_recursively(exec_obj, user, dest_dir)
-    set_ssh_perms(exec_obj, user, ssh_dir)
+        # 6. Fix permissions on repo dir; home dir chown is non-recursive.
+        exec_obj.run(f"chown {user}:{user} {os.path.dirname(dest_dir)}", force_sudo=True)
+        set_homedir_perms_recursively(exec_obj, user, dest_dir)
+    finally:
+        # Always re-enforce .ssh regardless of clone outcome — group chmod can clobber these.
+        set_ssh_perms(exec_obj, user, ssh_dir)
 
     # 7. Run installer script (as the user)
     installer_path = os.path.join(dest_dir, PSEUDOHOME_INSTALLER)

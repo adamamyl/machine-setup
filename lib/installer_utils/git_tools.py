@@ -31,16 +31,9 @@ def clone_or_update_repo(exec_obj: Executor,
     """
     
     parent_dir = os.path.dirname(dest_dir)
-    
-    # 1. Ensure parent dir exists and has correct group/permissions
+
+    # 1. Ensure parent dir exists
     exec_obj.run(f"mkdir -p {parent_dir}", force_sudo=True)
-    
-    # Set group ownership and ensure group-writeable; only when a group is explicitly requested.
-    # Never apply to home directories — callers that need a specific group (e.g. docker) pass it.
-    if group:
-        exec_obj.run(f"chgrp -R {group} {parent_dir} || true", force_sudo=True)
-        exec_obj.run(f"chmod -R g+w {parent_dir}", force_sudo=True)
-        exec_obj.run(f"chmod -R -s {parent_dir} || true", force_sudo=True)
 
     # 2. Prepare environment prefix for SSH key usage
     env_prefix = "" 
@@ -89,6 +82,12 @@ def clone_or_update_repo(exec_obj: Executor,
         exec_obj.run(final_cmd, user=user)
         log.success(f"Repository cloned: {dest_dir}")
 
+    # Apply group ownership to the repo dir only (not the parent — avoids clobbering .ssh etc.)
+    if group and os.path.isdir(dest_dir):
+        exec_obj.run(f"chgrp -R {group} {dest_dir} || true", force_sudo=True)
+        exec_obj.run(f"chmod -R g+w {dest_dir}", force_sudo=True)
+        exec_obj.run(f"chmod -R -s {dest_dir} || true", force_sudo=True)
+
 def clone_or_update_private_repo_with_key_check(exec_obj: Executor,
                                                repo_url: str,
                                                dest_dir: str,
@@ -124,9 +123,20 @@ def clone_or_update_private_repo_with_key_check(exec_obj: Executor,
             break # Exit loop on success
             
         except subprocess.CalledProcessError as e:
-            # Check for typical Git/SSH permission error (Exit code 128)
-            is_ssh_error = (e.returncode == 128) and ("Permission denied" in e.stderr)
-            
+            # Treat any git/SSH failure (auth or network) as potentially fixable by adding the key.
+            # Timeout ("Connection timed out") and auth ("Permission denied") both exit 128.
+            is_ssh_error = e.returncode == 128 and any(
+                marker in (e.stderr or "")
+                for marker in [
+                    "Permission denied",
+                    "Connection timed out",
+                    "connect to host",
+                    "Host is unreachable",
+                    "No route to host",
+                    "Network is unreachable",
+                ]
+            )
+
             if attempt == 0 and is_ssh_error:
                 log.warning("Initial clone attempt failed due to possible missing deploy key.")
                 
@@ -213,9 +223,10 @@ def set_ssh_perms(exec_obj: Executor, user: str, ssh_dir: str) -> None:
     exec_obj.run(f"chmod 700 {ssh_dir}", force_sudo=True)
     exec_obj.run(f"chown {user}:{user} {ssh_dir}", force_sudo=True)
     
-    # Re-fix ownership in case root generated the keys; _create_if_needed_ssh_key handles 600/644.
+    # Re-fix ownership and enforce 600 on all files; public keys and known_hosts relaxed below.
     exec_obj.run(f"chown {user}:{user} {ssh_dir}/* || true", force_sudo=True)
-    
-    # We explicitly relax permissions on known_hosts and public keys to 644/400, just in case
+    exec_obj.run(f"chmod 600 {ssh_dir}/* || true", force_sudo=True)
+
+    # Relax known_hosts and public keys to 644
     exec_obj.run(f"chmod 644 {ssh_dir}/known_hosts || true", force_sudo=True)
     exec_obj.run(f"chmod 644 {ssh_dir}/*.pub || true", force_sudo=True)

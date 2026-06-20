@@ -82,17 +82,18 @@ def probe_and_fix_ssh(
     host: str,
     ssh_user: str,
     key_path: str,
-) -> None:
+) -> bool:
     """
     Tests SSH connectivity to host as ssh_user using key_path.
-    Auto-remediates where possible, raises RuntimeError if unresolvable.
+    Auto-remediates where possible (known_hosts, key perms).
+    Returns True if SSH is working, False if not (caller should prompt user to add the key).
 
     Remediations attempted (in order):
-      1. Immediate raise on network-level failure (Tailscale/routing issue)
+      1. Return False on network-level failure (caller will prompt)
       2. ssh-keygen -R to clear any stale host key entry
       3. ssh-keyscan to populate/refresh known_hosts
       4. chmod 700 on .ssh dir and 600 on private key if permissions wrong
-      5. Verbose retry with full diagnostics before giving up
+      5. Verbose retry with full diagnostics before returning False
     """
     _validate_host(host)
     home = _user_homedir(ssh_user)
@@ -101,7 +102,7 @@ def probe_and_fix_ssh(
     ok, stderr = _ssh_probe(exec_obj, host, ssh_user, key_path)
     if ok:
         log.success(f"SSH to {ssh_user}@{host}: OK")
-        return
+        return True
 
     log.warning(f"SSH to {host} failed — diagnosing...")
 
@@ -116,15 +117,13 @@ def probe_and_fix_ssh(
         ]
     )
     if is_network_fail:
-        raise RuntimeError(
-            f"Network failure connecting to {host} — Tailscale connected but host unreachable?\n"
+        log.warning(
+            f"Network failure connecting to {host} — key may not be authorised yet.\n"
             f"SSH said: {stderr.strip()}"
         )
+        return False
 
     # Remediation A: clear stale host key unconditionally before re-scanning.
-    # ssh-keygen -R is harmless when no entry exists; and -q suppresses the
-    # "REMOTE HOST IDENTIFICATION HAS CHANGED" warning so we can't detect it
-    # from the quiet probe — easier to always clean and re-add.
     log.info(f"Clearing any stale known_hosts entry for {host}...")
     exec_obj.run(["ssh-keygen", "-R", host], user=ssh_user, check=False, run_quiet=True)
 
@@ -149,15 +148,12 @@ def probe_and_fix_ssh(
     ok, stderr = _ssh_probe(exec_obj, host, ssh_user, key_path)
     if ok:
         log.success(f"SSH to {ssh_user}@{host}: OK (after remediation)")
-        return
+        return True
 
-    # Verbose diagnostics before giving up
+    # Verbose diagnostics
     log.error(f"SSH to {host} still failing. Verbose output:")
     _, verbose_stderr = _ssh_probe(exec_obj, host, ssh_user, key_path, verbose=True)
     for line in verbose_stderr.splitlines():
         log.error(f"  ssh: {line}")
 
-    raise RuntimeError(
-        f"Cannot SSH to {ssh_user}@{host} — ensure the public key is authorised on the remote.\n"
-        f"Public key to add: {key_path}.pub"
-    )
+    return False
