@@ -108,13 +108,15 @@ def _display_key_and_url_for_repo(
         raise
         
     import sys
+    import time
     if sys.stdin.isatty():
         input("Press Enter once the deploy key has been successfully added to the Git host...")
     else:
         log.warning(
             "Non-interactive context (cloud-init?): cannot prompt. "
-            "Add the public key above to the Git host, then re-run this setup."
+            "Add the public key above to the Git host. Waiting 30 seconds before retrying..."
         )
+        time.sleep(30)
 
 # --- NEW DOTENV SYNC UTILITY ---
 def _dotenv_sync_if_needed(exec_obj: Executor, repo_name: str, user: str, repo_dir: str) -> None:
