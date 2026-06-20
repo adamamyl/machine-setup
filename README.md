@@ -50,6 +50,44 @@ sudo /root/.local/bin/uv run -- python3 /usr/local/src/machine-setup/setup_machi
 | **Install Docker & Packages**| `sudo uv run -- python3 /usr/local/src/machine-setup/setup_machine.py --docker --packages` | Installs system packages and Docker. |
 
 
+## Pseudohome
+
+Clones `adam@git.amyl.org.uk:/data/git/pseudoadam` into `~/pseudohome` and
+runs `pseudohome-symlinks` to wire up dotfiles.
+
+### SSH prerequisites
+
+`git.amyl.org.uk` is only reachable via Tailscale. The VM must be connected
+before `--pseudohome` runs (cloud-init handles this via a Tailscale auth key).
+
+Add this to `~/.ssh/config` (done automatically by setup if not present):
+
+```
+Host git.amyl.org.uk
+    IdentityFile ~/.ssh/pseudohome
+    IdentitiesOnly yes
+```
+
+### Deploy key
+
+`--pseudohome` generates an ed25519 key at `~/.ssh/pseudohome` if one doesn't
+exist, then prints a bordered prompt showing the command to run **on your local
+machine** to authorise it on wolfcraig:
+
+```
+ssh adam@<hostname>.local 'cat ~/.ssh/pseudohome.pub' | ssh adam@wolfcraig 'cat >> ~/.ssh/authorized_keys'
+```
+
+Setup waits 10 seconds before retrying the clone, giving time to run the
+command. On re-runs, the key already exists so no prompt appears.
+
+### known_hosts
+
+`git.amyl.org.uk` host keys (ed25519 + ecdsa-nistp256) are baked in and
+seeded automatically — no interactive fingerprint prompt during cloud-init.
+
+---
+
 ## Ollama
 
 Installs [Ollama](https://ollama.com) locally (bare-metal, for full GPU/CPU access) and deploys [Open WebUI](https://docs.openwebui.com) via Docker Compose. The UI connects to the host Ollama daemon through `host.docker.internal`, so model performance is unaffected by containerisation.
