@@ -342,23 +342,19 @@ def main() -> None:
         packages.install_packages(EXEC)
         packages.install_update_all_packages(EXEC)
 
-    if tasks["docker"]:
-        log_module_start("DOCKER", EXEC)
-        module_docker.install_docker_and_add_users(EXEC, DEFAULT_VM_USER)
-
     if tasks["cloud_init"]:
         log_module_start("CLOUD-INIT REPOS", EXEC)
         module_no2id.install_system_repos(EXEC)
-        
+
     if tasks["sudoers"]:
         log_module_start("SUDOERS CONFIG", EXEC)
         user_mgmt.setup_sudoers_staff(EXEC)
-        
+
     if tasks["tailscale"]:
         log_module_start("TAILSCALE", EXEC)
         tailscale.install_tailscale(EXEC)
         tailscale.ensure_tailscale_strict(EXEC)
-    
+
     # After Tailscale, before Private User Repos
     if tasks["firewall"]:
         from lib.installer_utils import module_firewall
@@ -373,6 +369,11 @@ def main() -> None:
     if tasks["no2id"]:
         log_module_start("NO2ID SETUP (USER: NO2ID-DOCKER)", EXEC)
         run_function_as_user(EXEC, "no2id-docker", "setup_no2id")
+
+    # Docker after users — ensures all user accounts are fully configured before group membership
+    if tasks["docker"]:
+        log_module_start("DOCKER", EXEC)
+        module_docker.install_docker_and_add_users(EXEC, DEFAULT_VM_USER)
     
     if tasks["wolfcraig"]:
         log_module_start("WOLFCRAIG SETUP", EXEC)
