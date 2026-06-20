@@ -80,7 +80,9 @@ def setup_pseudohome(exec_obj: Executor) -> None:
         exec_obj.run(f"chown {user}:{user} {os.path.dirname(dest_dir)}", force_sudo=True)
         set_homedir_perms_recursively(exec_obj, user, dest_dir)
     finally:
-        # Always re-enforce .ssh regardless of clone outcome — group chmod can clobber these.
+        # Always re-enforce .ssh and home dir ownership — guard against any upstream group leak.
+        # /home/adam must never carry the docker group; adam:adam only.
+        exec_obj.run(f"chown {user}:{user} /home/{user}", force_sudo=True)
         set_ssh_perms(exec_obj, user, ssh_dir)
 
     # 7. Run installer script (as the user)
