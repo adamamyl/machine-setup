@@ -1,4 +1,6 @@
 import os
+import platform
+import time
 from ..executor import Executor
 from ..logger import log
 from .user_mgmt import users_to_groups_if_needed, create_if_needed_ssh_dir
@@ -19,6 +21,21 @@ PSEUDOHOME_DEST_DIR: str = os.path.join(f"/home/{PSEUDOHOME_USER}", PSEUDOHOME_R
 PSEUDOHOME_INSTALLER: str = "pseudohome-symlinks"
 
 
+def _show_wolfcraig_copy_hint(user: str, ssh_dir: str, repo_name: str) -> None:
+    hostname = platform.node()
+    pub_key_path = os.path.join(ssh_dir, f"{repo_name}.pub")
+    cmd = f"ssh {user}@{hostname}.local 'cat {pub_key_path}' | ssh {user}@wolfcraig 'cat >> ~/.ssh/authorized_keys'"
+    print("\n" + "=" * 70, flush=True)
+    log.warning("ACTION REQUIRED: run this on your LOCAL machine to authorise the deploy key on wolfcraig:")
+    print("=" * 70, flush=True)
+    print(f"\n  {cmd}\n", flush=True)
+    print("=" * 70 + "\n", flush=True)
+    for i in range(10, 0, -1):
+        print(f"  Continuing in {i}s...  ", end="\r", flush=True)
+        time.sleep(1)
+    print(flush=True)
+
+
 def setup_pseudohome(exec_obj: Executor) -> None:
     """
     Setup 'adam' user, groups, SSH key, clone/update pseudohome.
@@ -37,7 +54,10 @@ def setup_pseudohome(exec_obj: Executor) -> None:
     ssh_dir = create_if_needed_ssh_dir(exec_obj, user)
 
     # This function now guarantees the key exists and has strict permissions
-    _create_if_needed_ssh_key(exec_obj, user, ssh_dir, repo_name)
+    key_is_new = _create_if_needed_ssh_key(exec_obj, user, ssh_dir, repo_name)
+
+    if key_is_new:
+        _show_wolfcraig_copy_hint(user, ssh_dir, repo_name)
 
     # Ensure the .ssh directory itself has strict permissions before use
     set_ssh_perms(exec_obj, user, ssh_dir)
