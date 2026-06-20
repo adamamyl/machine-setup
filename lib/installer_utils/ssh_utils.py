@@ -9,6 +9,16 @@ from ..logger import log
 
 _SAFE_HOSTNAME_RE = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-\.]{0,253}[a-zA-Z0-9])?$")
 
+# Pre-fetched host keys for hosts reachable only via Tailscale.
+# Avoids interactive fingerprint prompts during first connection.
+# Refresh with: ssh-keyscan <host>
+_BAKED_KNOWN_HOSTS: dict[str, list[str]] = {
+    "git.amyl.org.uk": [
+        "git.amyl.org.uk ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA5p+RFWilkcc9YR5gR2p23mguNrKrtwn3TAgxBOhRDq",
+        "git.amyl.org.uk ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBHtSrK7VFPhy2ZsrWjRLcmmeBsTCXPB8IzWz+IE6vkpXuKY91lDdWZdciFZm/RQQilZMxnQwZDfkDK4kGQii7IU=",
+    ],
+}
+
 
 def _validate_host(host: str) -> None:
     if not _SAFE_HOSTNAME_RE.match(host):
@@ -77,6 +87,23 @@ def _append_to_known_hosts(ssh_user: str, known_hosts: str, host: str) -> None:
         log.warning(f"ssh-keyscan failed: {e}")
 
 
+def _seed_known_hosts(ssh_user: str, known_hosts: str, host: str, entries: list[str]) -> None:
+    """Writes baked-in known_hosts entries for host if not already present."""
+    existing = ""
+    if os.path.exists(known_hosts):
+        with open(known_hosts) as f:
+            existing = f.read()
+    new_lines = [e for e in entries if e not in existing]
+    if not new_lines:
+        return
+    with open(known_hosts, "a") as f:
+        f.write("\n".join(new_lines) + "\n")
+    pw = pwd.getpwnam(ssh_user)
+    os.chown(known_hosts, pw.pw_uid, pw.pw_gid)
+    os.chmod(known_hosts, 0o600)
+    log.info(f"Seeded {len(new_lines)} baked-in host key(s) for {host} into known_hosts.")
+
+
 def probe_and_fix_ssh(
     exec_obj: Executor,
     host: str,
@@ -98,6 +125,11 @@ def probe_and_fix_ssh(
     _validate_host(host)
     home = _user_homedir(ssh_user)
     known_hosts = os.path.join(home, ".ssh", "known_hosts")
+
+    # Pre-seed known_hosts with baked-in entries so Tailscale-only hosts don't
+    # trigger interactive fingerprint prompts on first connection.
+    if host in _BAKED_KNOWN_HOSTS:
+        _seed_known_hosts(ssh_user, known_hosts, host, _BAKED_KNOWN_HOSTS[host])
 
     ok, stderr = _ssh_probe(exec_obj, host, ssh_user, key_path)
     if ok:
