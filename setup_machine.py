@@ -335,6 +335,7 @@ def main() -> None:
     if tasks["root_ssh_keys"]:
         log_module_start("ROOT SSH KEYS", EXEC)
         user_mgmt.install_root_ssh_keys(EXEC)
+        user_mgmt.install_mapped_ssh_keys(EXEC, DEFAULT_VM_USER)
         
     if tasks["packages"]:
         log_module_start("PACKAGES", EXEC)
