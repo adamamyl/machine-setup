@@ -103,9 +103,9 @@ def setup_virtmachine(
     if netman_enabled and networkd_enabled:
         log.warning(
             "Both NetworkManager and systemd-networkd are enabled. "
-            "Disabling systemd-networkd for stability."
+            "Disabling NetworkManager in favour of systemd-networkd."
         )
-        exec_obj.run("systemctl disable systemd-networkd.service", force_sudo=True)
+        exec_obj.run("systemctl disable --now NetworkManager.service NetworkManager-wait-online.service", force_sudo=True)
 
     # 5. Ensure fstab entry for the *initial* mount exists (unchanged)
     FSTAB_LINE_VIRTIO = "share /mnt/utm 9p trans=virtio,version=9p2000.L,rw,_netdev,nofail,auto 0 0"
