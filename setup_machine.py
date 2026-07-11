@@ -86,7 +86,13 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
     group_modules.add_argument("--tailscale", action="store_true", dest="do_tailscale",
                                help="Install and configure Tailscale.")
     group_modules.add_argument("--docker", action="store_true", dest="do_docker",
-                               help="Install Docker and add users to the docker group.")
+                               help="Install Docker. Target user gets rootless Docker by "
+                                    "default; see --docker-rootful to override.")
+    group_modules.add_argument(
+        "--docker-rootful", action="store_true", dest="do_docker_rootful",
+        help="Use traditional rootful Docker (add user to the 'docker' group) "
+             "instead of the rootless default."
+    )
     group_modules.add_argument("--cloud-init", action="store_true", dest="do_cloud_init",
                                help="Install system-level repos (post-cloud-init, etc.).")
     group_modules.add_argument("--firewall", action="store_true", dest="do_firewall",
@@ -373,7 +379,9 @@ def main() -> None:
     # Docker after users — ensures all user accounts are fully configured before group membership
     if tasks["docker"]:
         log_module_start("DOCKER", EXEC)
-        module_docker.install_docker_and_add_users(EXEC, DEFAULT_VM_USER)
+        module_docker.install_docker_and_add_users(
+            EXEC, DEFAULT_VM_USER, rootless=not args.do_docker_rootful
+        )
     
     if tasks["wolfcraig"]:
         log_module_start("WOLFCRAIG SETUP", EXEC)

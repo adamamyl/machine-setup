@@ -1,12 +1,13 @@
 import shutil
 import platform
 import os
+import time
 from typing import List, Dict
 import subprocess
 
 from ..executor import Executor
 from ..logger import log
-from ..constants import DOCKER_DEPS, DOCKER_PKGS
+from ..constants import DOCKER_DEPS, DOCKER_PKGS, ROOTLESS_DOCKER_DEPS
 from .apt_tools import apt_install, ensure_apt_repo
 from .user_mgmt import add_user_to_group
 
@@ -68,10 +69,22 @@ def _remove_old_docker(exec_obj: Executor) -> None:
         log.debug(f"Removal error: {e}")
         # We don't halt here, as the subsequent installation step will fail if necessary.
 
-def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None:
+def install_docker_and_add_users(
+    exec_obj: Executor, *users_to_add: str, rootless: bool = True
+) -> None:
     """
-    Installs Docker packages, starts the service, and adds users to the 'docker' group.
+    Installs Docker packages (system-wide daemon) and Docker Compose plugin.
     Supports both Ubuntu and Debian automatically.
+
+    By default each user in *users_to_add* gets their own rootless Docker
+    daemon (per docs.docker.com/engine/security/rootless/) rather than being
+    added to the 'docker' group, which is root-equivalent. The system-wide
+    daemon is still installed/enabled regardless, since other modules
+    (no2id-docker, ollama-docker) bind-mount /var/run/docker.sock and depend
+    on it; rootless and rootful Docker coexist fine on the same host.
+
+    Pass rootless=False to restore the old behaviour of adding users to the
+    'docker' group instead.
     """
     # Safeguard for macOS
     if platform.system().lower() == "darwin":
@@ -93,8 +106,12 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
         # 1. Detect OS details using Python dictionary matching
         os_info = _get_os_release()
         os_id = os_info.get("ID")  # e.g., 'ubuntu' or 'debian'
-        codename = os_info.get("VERSION_CODENAME")  # e.g., 'noble' or 'bookworm'
-        
+        # Docker's Ubuntu install docs prefer UBUNTU_CODENAME over VERSION_CODENAME
+        # (falling back to the latter): unofficial derivatives like Mint or Pop!_OS
+        # report their own VERSION_CODENAME but still carry UBUNTU_CODENAME for the
+        # underlying Ubuntu release Docker's repo actually publishes packages for.
+        codename = os_info.get("UBUNTU_CODENAME") or os_info.get("VERSION_CODENAME")
+
         if not os_id or not codename:
             log.critical(
                 "Could not detect OS ID or Codename from /etc/os-release. Aborting Docker setup."
@@ -102,6 +119,20 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
             raise RuntimeError("Cannot proceed without distribution details.")
 
         log.info(f"Detected OS: {os_id}, Codename: {codename}")
+
+        # Docker's repo lags behind new Debian releases. Fall back to the last
+        # known supported codename if the detected one isn't published yet.
+        DEBIAN_DOCKER_FALLBACK = {
+            "trixie": "bookworm",
+            "forky": "trixie",  # Debian 14, future-proofing
+        }
+        if os_id == "debian" and codename in DEBIAN_DOCKER_FALLBACK:
+            fallback = DEBIAN_DOCKER_FALLBACK[codename]
+            log.warning(
+                f"Docker repo has no packages for Debian '{codename}' yet. "
+                f"Using '{fallback}' repo (compatible binaries)."
+            )
+            codename = fallback
 
         keyrings_dir = "/etc/apt/keyrings"
         docker_gpg_path = os.path.join(keyrings_dir, "docker.gpg")
@@ -123,12 +154,8 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
 
         arch = platform.machine()
         
-        # --- FIX: Architecture Correction (aarch64 -> arm64) ---
-        # If the detected arch is aarch64, use the APT standard 'arm64' for the repo line.
-        if arch == 'aarch64':
-            display_arch = 'arm64'
-        else:
-            display_arch = arch
+        ARCH_MAP = {"x86_64": "amd64", "aarch64": "arm64"}
+        display_arch = ARCH_MAP.get(arch, arch)
 
         # 2. Interpolate the correct ID, codename and arch into the repository line
         repo_line = (
@@ -148,11 +175,167 @@ def install_docker_and_add_users(exec_obj: Executor, *users_to_add: str) -> None
 
 
     exec_obj.run("groupadd -f docker", force_sudo=True)
-    for user in users_to_add:
-        add_user_to_group(exec_obj, user, "docker")
-        log.success(f"Added {user} to docker group.")
-    
+
+    if rootless:
+        apt_install(exec_obj, ROOTLESS_DOCKER_DEPS)
+        for user in users_to_add:
+            _setup_rootless_docker(exec_obj, user)
+    else:
+        for user in users_to_add:
+            add_user_to_group(exec_obj, user, "docker")
+            log.success(f"Added {user} to docker group.")
+
     log.success("Docker installation complete.")
+
+
+def _user_exists(user: str) -> bool:
+    return subprocess.run(
+        ['id', user], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    ).returncode == 0
+
+
+def _get_uid(user: str) -> int:
+    return int(subprocess.run(
+        ['id', '-u', user], capture_output=True, text=True, check=True
+    ).stdout.strip())
+
+
+def _get_homedir(user: str) -> str:
+    result = subprocess.run(
+        ['getent', 'passwd', user], capture_output=True, text=True, check=True
+    )
+    return result.stdout.strip().split(':')[5]
+
+
+def _ensure_subid_range(exec_obj: Executor, path: str, user: str) -> None:
+    """
+    Ensures /etc/subuid or /etc/subgid has a 65536-wide range for user.
+    Modern useradd assigns this automatically; this is a fallback for
+    accounts created before that became the default, matching the
+    guidance in Docker's get.docker.com/rootless install script.
+    """
+    try:
+        with open(path) as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        lines = []
+
+    if any(line.startswith(f"{user}:") for line in lines):
+        log.info(f"{path} already has a range for '{user}'.")
+        return
+
+    # Pick a start beyond any existing range so we don't collide with one.
+    starts_and_sizes = []
+    for line in lines:
+        parts = line.split(':')
+        if len(parts) == 3:
+            try:
+                starts_and_sizes.append((int(parts[1]), int(parts[2])))
+            except ValueError:
+                continue
+    next_start = max((start + size for start, size in starts_and_sizes), default=100000)
+    next_start = max(next_start, 100000)
+
+    log.info(f"Adding subordinate ID range {next_start}:65536 for '{user}' in {path}.")
+    exec_obj.run(f"echo '{user}:{next_start}:65536' | tee -a {path} > /dev/null", force_sudo=True)
+
+
+def _setup_rootless_docker(exec_obj: Executor, user: str) -> None:
+    """
+    Configures rootless Docker for *user*: uidmap prerequisites, subuid/subgid
+    ranges, lingering (so their systemd --user instance survives without an
+    active login), then runs dockerd-rootless-setuptool.sh as that user.
+
+    --force is passed to the setuptool because the system-wide dockerd is
+    intentionally left running for other services; rootless and rootful
+    Docker run side by side using separate sockets.
+    """
+    if not _user_exists(user):
+        log.warning(f"User '{user}' does not exist; skipping rootless Docker setup.")
+        return
+
+    _ensure_subid_range(exec_obj, "/etc/subuid", user)
+    _ensure_subid_range(exec_obj, "/etc/subgid", user)
+
+    log.info(f"Enabling lingering for '{user}' so their user services survive logout/boot.")
+    exec_obj.run(f"loginctl enable-linger {user}", force_sudo=True)
+
+    uid = _get_uid(user)
+    runtime_dir = f"/run/user/{uid}"
+
+    # Lingering triggers systemd-logind to create the runtime dir; give it a
+    # moment to appear rather than sleeping blindly.
+    for _ in range(10):
+        if os.path.isdir(runtime_dir) or exec_obj.dry_run:
+            break
+        time.sleep(1)
+    else:
+        log.warning(f"{runtime_dir} did not appear after enabling linger; proceeding anyway.")
+
+    env_prefix = f"XDG_RUNTIME_DIR={runtime_dir} PATH=/usr/bin:$PATH"
+
+    log.info(f"Running dockerd-rootless-setuptool.sh for '{user}'...")
+    exec_obj.run(
+        f"{env_prefix} dockerd-rootless-setuptool.sh install --force",
+        user=user,
+        check=True,
+    )
+
+    log.info(f"Enabling and starting the rootless docker.service for '{user}'...")
+    exec_obj.run(
+        f"XDG_RUNTIME_DIR={runtime_dir} systemctl --user enable --now docker.service",
+        user=user,
+        check=True,
+    )
+
+    _add_rootless_env_to_shell_rc(exec_obj, user, uid)
+    _verify_rootless_docker(exec_obj, user, runtime_dir)
+
+
+def _add_rootless_env_to_shell_rc(exec_obj: Executor, user: str, uid: int) -> None:
+    """Adds the DOCKER_HOST export Docker's docs recommend to the user's ~/.bashrc (idempotent)."""
+    marker = "# Added by machine-setup: rootless Docker"
+    export_line = f'export DOCKER_HOST="unix:///run/user/{uid}/docker.sock"'
+
+    try:
+        bashrc = os.path.join(_get_homedir(user), ".bashrc")
+    except subprocess.CalledProcessError:
+        log.warning(f"Could not determine homedir for '{user}'; skipping .bashrc update.")
+        return
+
+    existing = ""
+    if os.path.exists(bashrc):
+        with open(bashrc) as f:
+            existing = f.read()
+
+    if marker in existing:
+        log.info(f"{bashrc} already configured for rootless Docker.")
+        return
+
+    log.info(f"Adding DOCKER_HOST export to {bashrc} for '{user}'.")
+    block = f"\n{marker}\n{export_line}\n"
+    exec_obj.run(f"printf '%s' '{block}' | tee -a {bashrc} > /dev/null", force_sudo=True)
+    exec_obj.run(f"chown {user}:{user} {bashrc}", force_sudo=True)
+
+
+def _verify_rootless_docker(exec_obj: Executor, user: str, runtime_dir: str) -> None:
+    """Runs 'docker info' as user against their rootless socket to confirm it's up."""
+    try:
+        result = exec_obj.run(
+            f"XDG_RUNTIME_DIR={runtime_dir} docker info",
+            user=user,
+            check=True,
+            run_quiet=True,
+        )
+        if "rootless" in result.stdout.lower():
+            log.success(f"Rootless Docker is running for '{user}'.")
+        else:
+            log.warning(
+                f"'docker info' succeeded for '{user}' but doesn't report rootless mode."
+            )
+    except subprocess.CalledProcessError as e:
+        log.warning(f"Could not verify rootless Docker for '{user}'.")
+        log.debug(f"docker info error: {e}")
 
 def _verify_docker_installation(exec_obj: Executor) -> None:
     """
