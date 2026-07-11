@@ -341,7 +341,10 @@ def main() -> None:
     if tasks["root_ssh_keys"]:
         log_module_start("ROOT SSH KEYS", EXEC)
         user_mgmt.install_root_ssh_keys(EXEC)
-        user_mgmt.install_mapped_ssh_keys(EXEC, DEFAULT_VM_USER)
+        if user_mgmt.ensure_adam_user(EXEC, DEFAULT_VM_USER):
+            user_mgmt.install_mapped_ssh_keys(EXEC, DEFAULT_VM_USER)
+        else:
+            log.warning(f"Skipping SSH key install for '{DEFAULT_VM_USER}': user not created.")
         
     if tasks["packages"]:
         log_module_start("PACKAGES", EXEC)
@@ -370,7 +373,10 @@ def main() -> None:
     # Private User Repositories
     if tasks["pseudohome"]:
         log_module_start("PSEUDOHOME SETUP (USER: ADAM)", EXEC)
-        run_function_as_user(EXEC, "adam", "setup_pseudohome")
+        if user_mgmt.ensure_adam_user(EXEC, "adam"):
+            run_function_as_user(EXEC, "adam", "setup_pseudohome")
+        else:
+            log.warning("Skipping pseudohome setup: user 'adam' not created.")
 
     if tasks["no2id"]:
         log_module_start("NO2ID SETUP (USER: NO2ID-DOCKER)", EXEC)
