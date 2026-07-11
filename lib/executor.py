@@ -84,43 +84,65 @@ class Executor:
                 log.info(f"Executing: {log_cmd}")
 
         # --- 5. Actual Execution ---
-        
+
         full_env = os.environ.copy()
         if env:
             full_env.update(env)
 
         try:
-            result = subprocess.run(
+            process = subprocess.Popen(
                 cmd_list,
                 cwd=cwd,
-                check=check,
                 stdin=stdin_target,
                 stdout=stdout_target,
                 stderr=stderr_target,
                 env=full_env,
-                universal_newlines=True
+                universal_newlines=True,
             )
-            
-            # Logging success/debug output only if not running interactively 
-            # (since interactive output goes directly to terminal)
-            if not interactive:
-                if self.verbose:
-                    log.debug(f"Command Output:\n{result.stdout}\n{result.stderr}")
-                if not suppress_logging:
-                    log.success(f"Executed: {log_cmd}")
-            
-            return result
-        except subprocess.CalledProcessError as e:
-            # This block only executes if 'check=True' AND the command failed.
-            # Output is already logged by the caller if 'interactive' is false.
-            if not interactive:
-                log.error(f"Command failed with exit code {e.returncode}: {log_cmd}")
-                log.error(f"STDOUT:\n{e.stdout}")
-                log.error(f"STDERR:\n{e.stderr}")
-            raise
         except FileNotFoundError:
             log.critical(f"Command not found: {cmd_list[0]}")
             sys.exit(1)
+
+        # Poll with a timeout instead of blocking outright, so a slow/stalled
+        # command (flaky network, unauthorised SSH key, etc.) logs a heartbeat
+        # instead of looking indistinguishable from a hang. communicate() can
+        # be safely re-called after a TimeoutExpired without losing output.
+        heartbeat_seconds = 15
+        elapsed = 0
+        stdout_data = ""
+        stderr_data = ""
+        while True:
+            try:
+                stdout_data, stderr_data = process.communicate(timeout=heartbeat_seconds)
+                break
+            except subprocess.TimeoutExpired:
+                elapsed += heartbeat_seconds
+                if not suppress_logging:
+                    log.info(f"Still running ({elapsed}s elapsed): {log_cmd}")
+
+        result = subprocess.CompletedProcess(
+            args=cmd_list, returncode=process.returncode, stdout=stdout_data, stderr=stderr_data
+        )
+
+        if check and result.returncode != 0:
+            # This block only executes if 'check=True' AND the command failed.
+            if not interactive:
+                log.error(f"Command failed with exit code {result.returncode}: {log_cmd}")
+                log.error(f"STDOUT:\n{result.stdout}")
+                log.error(f"STDERR:\n{result.stderr}")
+            raise subprocess.CalledProcessError(
+                result.returncode, cmd_list, output=result.stdout, stderr=result.stderr
+            )
+
+        # Logging success/debug output only if not running interactively
+        # (since interactive output goes directly to terminal)
+        if not interactive:
+            if self.verbose:
+                log.debug(f"Command Output:\n{result.stdout}\n{result.stderr}")
+            if not suppress_logging:
+                log.success(f"Executed: {log_cmd}")
+
+        return result
             
 EXEC = Executor()
 

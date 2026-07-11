@@ -21,13 +21,36 @@ PSEUDOHOME_DEST_DIR: str = os.path.join(f"/home/{PSEUDOHOME_USER}", PSEUDOHOME_R
 PSEUDOHOME_INSTALLER: str = "pseudohome-symlinks"
 
 
-def _show_wolfcraig_copy_hint(user: str, ssh_dir: str, repo_name: str) -> None:
+def _show_wolfcraig_copy_hint(exec_obj: Executor, user: str, ssh_dir: str, repo_name: str) -> None:
+    # Prefer the Tailscale IP: it's reachable regardless of LAN/mDNS, unlike a
+    # bare hostname (which needs .local mDNS on the same network to resolve,
+    # and this box may not be on one — e.g. a cloud VM).
     hostname = platform.node()
+    address = hostname
+    try:
+        result = exec_obj.run("tailscale ip -4", check=True, run_quiet=True, force_sudo=True)
+        ts_ip = result.stdout.strip()
+        if ts_ip:
+            address = ts_ip
+    except Exception as e:
+        log.debug(f"Could not determine Tailscale IP for copy hint: {e}")
+
     pub_key_path = os.path.join(ssh_dir, f"{repo_name}.pub")
-    cmd = f"ssh {user}@{hostname}.local 'cat {pub_key_path}' | ssh {user}@wolfcraig 'cat >> ~/.ssh/authorized_keys'"
+    cmd = (
+        f"ssh {user}@{address} 'cat {pub_key_path}' "
+        f"| ssh {user}@wolfcraig 'cat >> ~/.ssh/authorized_keys'"
+    )
     print("\n" + "=" * 70, flush=True)
-    log.warning("ACTION REQUIRED: run this on your LOCAL machine to authorise the deploy key on wolfcraig:")
+    log.warning(
+        "ACTION REQUIRED: run this on your LOCAL machine to authorise the deploy key on wolfcraig:"
+    )
     print("=" * 70, flush=True)
+    if address == hostname:
+        log.warning(
+            f"Could not determine a Tailscale IP; using bare hostname '{address}', "
+            "which only resolves on the same LAN (no .local mDNS assumed). Swap it "
+            "for a reachable hostname/IP if the command below doesn't connect:"
+        )
     print(f"\n  {cmd}\n", flush=True)
     print("=" * 70 + "\n", flush=True)
     for i in range(10, 0, -1):
@@ -57,7 +80,7 @@ def setup_pseudohome(exec_obj: Executor) -> None:
     key_is_new = _create_if_needed_ssh_key(exec_obj, user, ssh_dir, repo_name)
 
     if key_is_new:
-        _show_wolfcraig_copy_hint(user, ssh_dir, repo_name)
+        _show_wolfcraig_copy_hint(exec_obj, user, ssh_dir, repo_name)
 
     # Ensure the .ssh directory itself has strict permissions before use
     set_ssh_perms(exec_obj, user, ssh_dir)

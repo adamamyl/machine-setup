@@ -39,8 +39,17 @@ def clone_or_update_repo(exec_obj: Executor,
     env_prefix = "" 
     if ssh_key_path:
         # Define the SSH command using the deploy key.
+        # BatchMode+ConnectTimeout are required here: without them a stalled
+        # network path (e.g. Tailscale half-up) or an unauthorised key hangs
+        # this clone/fetch indefinitely with zero feedback, since output is
+        # captured rather than streamed. Bounding it lets the existing
+        # retry/prompt logic in clone_or_update_private_repo_with_key_check
+        # actually kick in instead of the process just sitting there.
         # FIX: Use double quotes for the path to prevent premature string termination in bash -c
-        ssh_command = f"ssh -i \"{ssh_key_path}\" -o IdentitiesOnly=yes"
+        ssh_command = (
+            f"ssh -i \"{ssh_key_path}\" -o IdentitiesOnly=yes "
+            "-o BatchMode=yes -o ConnectTimeout=15"
+        )
         # Bundle the environment setting command string directly into the prefix
         env_prefix = f"GIT_SSH_COMMAND='{ssh_command}' "
         log.debug(f"Using GIT_SSH_COMMAND prefix: {env_prefix}")
