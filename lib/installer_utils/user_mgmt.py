@@ -1,15 +1,39 @@
 import os
 import subprocess
 import tempfile
-from typing import List, Set
+from typing import List, Optional, Set
 from ..executor import Executor
 from ..logger import log
 from ..constants import USER_GITHUB_KEY_MAP # Required for key mapping
 
 # --- User and Group Management ---
 
-def require_user(exec_obj: Executor, user: str) -> bool:
-    """Ensures a user exists, creating them with useradd -m if missing."""
+def _uid_gid_available(uid: int) -> bool:
+    """Checks whether a uid/gid number is not already claimed by another user/group."""
+    uid_taken = subprocess.run(
+        ['getent', 'passwd', str(uid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    ).returncode == 0
+    gid_taken = subprocess.run(
+        ['getent', 'group', str(uid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    ).returncode == 0
+    return not uid_taken and not gid_taken
+
+def require_user(
+    exec_obj: Executor,
+    user: str,
+    uid: Optional[int] = None,
+    prompt_before_create: bool = False,
+) -> bool:
+    """
+    Ensures a user exists, creating them with useradd -m if missing.
+
+    If uid is given, tries to create the user with that uid/gid. If it's
+    already claimed (e.g. by docker), falls back to the next available
+    uid/gid rather than renumbering anything already on the box.
+
+    If prompt_before_create is True and we're not running with --force,
+    asks for interactive confirmation before creating the account.
+    """
     try:
         # id check is idempotent
         subprocess.run(
@@ -17,10 +41,38 @@ def require_user(exec_obj: Executor, user: str) -> bool:
         )
         return True
     except subprocess.CalledProcessError:
+        if prompt_before_create and not exec_obj.force and not exec_obj.dry_run:
+            confirm = input(f"User '{user}' does not exist. Create it now? (y/N): ").lower()
+            if confirm != 'y':
+                log.warning(f"Skipping creation of user '{user}' at user's request.")
+                return False
+
+        useradd_cmd = ['useradd', '-m']
+        if uid is not None:
+            if _uid_gid_available(uid):
+                useradd_cmd += ['-u', str(uid), '-U']
+            else:
+                log.warning(
+                    f"uid/gid {uid} already in use (e.g. by another service); "
+                    f"creating '{user}' with the next available uid/gid instead. "
+                    "Not renumbering existing accounts."
+                )
+        useradd_cmd.append(user)
+
         log.info(f"Creating user '{user}'...")
-        exec_obj.run(f"useradd -m {user}", force_sudo=True)
+        exec_obj.run(" ".join(useradd_cmd), force_sudo=True)
         log.success(f"Created user '{user}'")
         return True
+
+ADAM_UID: int = 1000
+
+def ensure_adam_user(exec_obj: Executor, user: str = "adam") -> bool:
+    """
+    Ensures the 'adam' user exists (uid/gid 1000 if available), prompting to
+    create it if missing. Used by modules (root-ssh-keys, pseudohome) that
+    otherwise fail hard when the account isn't there yet.
+    """
+    return require_user(exec_obj, user, uid=ADAM_UID, prompt_before_create=True)
 
 def add_user_to_group(exec_obj: Executor, user: str, group: str) -> None:
     """Ensures a group exists, then adds a user to it."""
