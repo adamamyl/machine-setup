@@ -87,8 +87,10 @@ VM_PACKAGES: List[str] = ["spice-vdagent", "qemu-guest-agent", "bindfs"]
 # Packages required for Docker (Based on Docker install script pre-reqs: ca-certificates curl)
 DOCKER_DEPS: List[str] = ["curl", "gnupg", "lsb-release", "ca-certificates"]
 
-# newuidmap/newgidmap, required for rootless mode's user namespace UID/GID mapping
-ROOTLESS_DOCKER_DEPS: List[str] = ["uidmap"]
+# newuidmap/newgidmap for rootless mode's UID/GID mapping; systemd-container
+# provides machinectl, needed to get a real per-user session (see
+# module_docker._machinectl_shell for why plain sudo -u doesn't work).
+ROOTLESS_DOCKER_DEPS: List[str] = ["uidmap", "systemd-container"]
 
 # Full modern Docker suite (Matching successful installation log)
 DOCKER_PKGS: List[str] = [

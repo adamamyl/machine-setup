@@ -9,7 +9,7 @@ from ..executor import Executor
 from ..logger import log
 from ..constants import DOCKER_DEPS, DOCKER_PKGS, ROOTLESS_DOCKER_DEPS
 from .apt_tools import apt_install, ensure_apt_repo
-from .user_mgmt import add_user_to_group
+from .user_mgmt import add_user_to_group, require_user
 
 def _get_os_release() -> Dict[str, str]:
     """
@@ -188,12 +188,6 @@ def install_docker_and_add_users(
     log.success("Docker installation complete.")
 
 
-def _user_exists(user: str) -> bool:
-    return subprocess.run(
-        ['id', user], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    ).returncode == 0
-
-
 def _get_uid(user: str) -> int:
     return int(subprocess.run(
         ['id', '-u', user], capture_output=True, text=True, check=True
@@ -240,17 +234,39 @@ def _ensure_subid_range(exec_obj: Executor, path: str, user: str) -> None:
     exec_obj.run(f"echo '{user}:{next_start}:65536' | tee -a {path} > /dev/null", force_sudo=True)
 
 
+def _machinectl_shell(exec_obj: Executor, user: str, uid: int, inner_cmd: str) -> None:
+    """
+    Runs inner_cmd as user via 'machinectl shell', with XDG_RUNTIME_DIR and
+    DBUS_SESSION_BUS_ADDRESS set.
+
+    'sudo -u user' does NOT create a real login session, so the user's
+    systemd --user instance / D-Bus bus either isn't reachable or isn't the
+    persistent one lingering keeps alive — dockerd-rootless-setuptool.sh and
+    systemctl --user then silently fall back to a non-systemd path ("systemd
+    not detected") or fail with "Unit docker.service does not exist".
+    machinectl shell attaches to the real per-user session that
+    loginctl enable-linger keeps running.
+    """
+    script = (
+        f"export XDG_RUNTIME_DIR=/run/user/{uid}; "
+        'export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"; '
+        f"{inner_cmd}"
+    )
+    exec_obj.run(f"machinectl shell {user}@ /bin/bash -c '{script}'", force_sudo=True, check=True)
+
+
 def _setup_rootless_docker(exec_obj: Executor, user: str) -> None:
     """
     Configures rootless Docker for *user*: uidmap prerequisites, subuid/subgid
     ranges, lingering (so their systemd --user instance survives without an
-    active login), then runs dockerd-rootless-setuptool.sh as that user.
+    active login), then runs dockerd-rootless-setuptool.sh as that user via
+    'machinectl shell' (see _machinectl_shell for why not plain sudo -u).
 
     --force is passed to the setuptool because the system-wide dockerd is
     intentionally left running for other services; rootless and rootful
     Docker run side by side using separate sockets.
     """
-    if not _user_exists(user):
+    if not require_user(exec_obj, user, prompt_before_create=True):
         log.warning(f"User '{user}' does not exist; skipping rootless Docker setup.")
         return
 
@@ -272,21 +288,13 @@ def _setup_rootless_docker(exec_obj: Executor, user: str) -> None:
     else:
         log.warning(f"{runtime_dir} did not appear after enabling linger; proceeding anyway.")
 
-    env_prefix = f"XDG_RUNTIME_DIR={runtime_dir} PATH=/usr/bin:$PATH"
-
     log.info(f"Running dockerd-rootless-setuptool.sh for '{user}'...")
-    exec_obj.run(
-        f"{env_prefix} dockerd-rootless-setuptool.sh install --force",
-        user=user,
-        check=True,
+    _machinectl_shell(
+        exec_obj, user, uid, "PATH=/usr/bin:$PATH dockerd-rootless-setuptool.sh install --force"
     )
 
     log.info(f"Enabling and starting the rootless docker.service for '{user}'...")
-    exec_obj.run(
-        f"XDG_RUNTIME_DIR={runtime_dir} systemctl --user enable --now docker.service",
-        user=user,
-        check=True,
-    )
+    _machinectl_shell(exec_obj, user, uid, "systemctl --user enable --now docker.service")
 
     _add_rootless_env_to_shell_rc(exec_obj, user, uid)
     _verify_rootless_docker(exec_obj, user, runtime_dir)
