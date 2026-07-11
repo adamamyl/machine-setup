@@ -89,6 +89,11 @@ def parse_args() -> Tuple[argparse.Namespace, List[str]]:
                                help="Install Docker. Target user gets rootless Docker by "
                                     "default; see --docker-rootful to override.")
     group_modules.add_argument(
+        "--docker-user", default=DEFAULT_VM_USER, dest="docker_user",
+        help=f"User to configure Docker for; created (with confirmation) if missing "
+             f"(default: {DEFAULT_VM_USER})."
+    )
+    group_modules.add_argument(
         "--docker-rootful", action="store_true", dest="do_docker_rootful",
         help="Use traditional rootful Docker (add user to the 'docker' group) "
              "instead of the rootless default."
@@ -386,7 +391,7 @@ def main() -> None:
     if tasks["docker"]:
         log_module_start("DOCKER", EXEC)
         module_docker.install_docker_and_add_users(
-            EXEC, DEFAULT_VM_USER, rootless=not args.do_docker_rootful
+            EXEC, args.docker_user, rootless=not args.do_docker_rootful
         )
     
     if tasks["wolfcraig"]:
